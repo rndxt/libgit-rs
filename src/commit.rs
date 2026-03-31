@@ -4,7 +4,7 @@ use crate::{ObjectType, write_index_to_tree};
 
 use crate::ObjectId;
 use crate::Repository;
-use crate::signature::{AuthorInfo, CommiterInfo, Signature};
+use crate::signature::{AuthorInfo, CommitterInfo, Signature};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateCommitError {
@@ -18,14 +18,14 @@ pub enum CreateCommitError {
 pub fn create_commit_from_index(
     repo: &Repository,
     author: AuthorInfo,
-    commiter: CommiterInfo,
+    committer: CommitterInfo,
     message: &str,
     parents: &[ObjectId],
 ) -> Result<ObjectId, CreateCommitError> {
     let index = repo.read_index()?;
     let odb = repo.object_db();
     let tree_id = write_index_to_tree(&odb, &index)?;
-    let raw_commit = get_raw_commit(tree_id, parents, author, commiter, message);
+    let raw_commit = get_raw_commit(tree_id, parents, author, committer, message);
     let commit_id = odb.write_raw(&raw_commit, ObjectType::Commit)?;
     Ok(commit_id)
 }
@@ -34,7 +34,7 @@ fn get_raw_commit(
     tree_id: ObjectId,
     parents: &[ObjectId],
     author: AuthorInfo,
-    commiter: CommiterInfo,
+    committer: CommitterInfo,
     message: &str,
 ) -> Vec<u8> {
     let mut builder = RawCommitBuilder::new();
@@ -44,7 +44,7 @@ fn get_raw_commit(
     }
     builder
         .add_author(author)
-        .add_commiter(commiter)
+        .add_committer(committer)
         .add_newline()
         .add_message(message);
     builder.build()
@@ -71,8 +71,8 @@ impl RawCommitBuilder {
         self.add_signature(b"author", author.0)
     }
 
-    fn add_commiter(&mut self, commiter: CommiterInfo) -> &mut Self {
-        self.add_signature(b"committer", commiter.0)
+    fn add_committer(&mut self, committer: CommitterInfo) -> &mut Self {
+        self.add_signature(b"committer", committer.0)
     }
 
     fn add_newline(&mut self) -> &mut Self {

@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 
 use git_rs::add_path_to_index;
 use git_rs::hash_file;
-use git_rs::signature::{AuthorInfo, CommiterInfo};
+use git_rs::signature::{AuthorInfo, CommitterInfo};
 use git_rs::write_index;
 use git_rs::write_index_to_tree;
 use git_rs::{ObjectType, remove_path_from_index};
@@ -97,9 +97,9 @@ fn add_to_index(repo: &Path, path: &Path) -> Result<()> {
 fn commit_index(repo: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
 
-    let author = AuthorInfo::new("author", "author@email", Time::new(1771253662, 10800)).unwrap();
+    let author = AuthorInfo::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
     let commiter =
-        CommiterInfo::new("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
+        CommitterInfo::build("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
     let message = "Commit is created";
     let parents = &[];
 
