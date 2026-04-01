@@ -110,7 +110,7 @@ impl Index {
         let mut buffer = Vec::new();
         if let Err(e) = index_file.read_to_end(&mut buffer) {
             return Err(OpenIndexError::ReadFileFailed(e));
-        };
+        }
 
         let mut parser = IndexParser::new(&buffer);
         let index = match parser.parse_index() {
@@ -143,7 +143,7 @@ impl Index {
             Err(i) => {
                 self.entries.insert(i, entry);
             },
-        };
+        }
     }
 
     pub fn remove(&mut self, i: usize) {
@@ -225,7 +225,7 @@ impl<'a> IndexParser<'a> {
 
     fn parse_entries(&mut self, number_of_entries: u32) -> Result<Vec<IndexEntry>, ParsingError> {
         let mut entries = Vec::with_capacity(number_of_entries as usize);
-        let mut parser = EntryParser::new(&self.data);
+        let mut parser = EntryParser::new(self.data);
         for i in 0..number_of_entries {
             let entry = parser
                 .parse_one_entry()
@@ -286,7 +286,7 @@ impl<'a> IndexParser<'a> {
     }
 
     fn is_extension_supported(&self, _signature: &[u8; 4]) -> bool {
-        return false;
+        false
     }
 }
 
@@ -386,7 +386,7 @@ impl<'a> EntryParser<'a> {
         // | name | \0 | padding of \0 to multiple of eight |
         // --------------------------------------------------
         let n = align_padding_size(self.consumed + 1);
-        let _ = self.data.split_off(..(n + 1))?;
+        let _ = self.data.split_off(..=n)?;
         self.consumed += n + 1;
         Some(())
     }
@@ -539,7 +539,7 @@ impl<W: Write> IndexWriter<W> {
 }
 
 fn align_padding_size(size: usize) -> usize {
-    return (8 - (size % 8)) % 8;
+    (8 - (size % 8)) % 8
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -562,17 +562,17 @@ pub fn add_path_to_index(
     repo: &Repository,
     index: &mut Index,
 ) -> Result<(), UpdateIndexError> {
-    let stat = fs::metadata(path).map_err(|e| UpdateIndexError::StatFailed(e))?;
+    let stat = fs::metadata(path).map_err(UpdateIndexError::StatFailed)?;
 
     if !stat.is_file() {
         return Err(UpdateIndexError::NotRegularFile);
     }
 
-    let file = File::open(path).map_err(|e| UpdateIndexError::FileNotFound(e))?;
+    let file = File::open(path).map_err(UpdateIndexError::FileNotFound)?;
     let db = repo.object_db();
     let id = db
         .write_file(&file, &stat, ObjectType::Blob)
-        .map_err(|e| UpdateIndexError::WriteObjectFailed(e))?;
+        .map_err(UpdateIndexError::WriteObjectFailed)?;
     let entry = create_index_entry(path, &stat, id);
     index.add(entry);
     Ok(())
@@ -591,8 +591,8 @@ fn create_index_entry(path: &Path, stat: &Metadata, id: ObjectId) -> IndexEntry 
 
     let dev = stat.dev() as u32;
     let ino = stat.ino() as u32;
-    let uid = stat.uid() as u32;
-    let gid = stat.gid() as u32;
+    let uid = stat.uid();
+    let gid = stat.gid();
     let size = stat.size() as u32;
     let mode = stat_mode_to_index_mode(stat);
 

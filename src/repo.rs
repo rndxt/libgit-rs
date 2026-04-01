@@ -49,7 +49,7 @@ impl Repository {
     }
 
     pub fn git_dir(&'_ self) -> &Path {
-        &self.git_dir.as_path()
+        self.git_dir.as_path()
     }
 }
 

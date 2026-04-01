@@ -12,7 +12,7 @@ impl Sha1 {
     }
 
     pub fn from_array(bytes: &[u8; SHA1_SIZE_IN_BYTES]) -> Self {
-        Self(bytes.clone())
+        Self(*bytes)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {

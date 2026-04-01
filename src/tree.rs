@@ -5,7 +5,7 @@ use crate::{GIT_MODE_TREE, ObjectType, hash_buffer};
 
 pub fn write_index_to_tree(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
-    let writer = FromIndex::new(index, WriteCallback::WriteToDb(&odb));
+    let writer = FromIndex::new(index, WriteCallback::WriteToDb(odb));
     writer.write_tree()
 }
 
@@ -49,20 +49,17 @@ impl<'a> FromIndex<'a> {
                 break;
             }
 
-            match rest.iter().position(|b| *b == b'/') {
-                Some(slash) => {
-                    let (mid, _) = rest.split_at(slash);
-                    let (path, _) = path.split_at(left.len() + mid.len() + 1);
-                    let (next, id) = self.write_tree_impl(path, i)?;
-                    builder.add_entry(GIT_MODE_TREE, mid, &id);
-                    i = next;
-                },
-                None => {
-                    // File or gitlink
-                    builder.add_entry(entry.mode, rest, &entry.id);
-                    i += 1;
-                },
-            };
+            if let Some(slash) = rest.iter().position(|b| *b == b'/') {
+                let (mid, _) = rest.split_at(slash);
+                let (path, _) = path.split_at(left.len() + mid.len() + 1);
+                let (next, id) = self.write_tree_impl(path, i)?;
+                builder.add_entry(GIT_MODE_TREE, mid, &id);
+                i = next;
+            } else {
+                // File or gitlink
+                builder.add_entry(entry.mode, rest, &entry.id);
+                i += 1;
+            }
         }
 
         let buffer = builder.buffer();
