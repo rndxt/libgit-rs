@@ -10,7 +10,7 @@ impl ObjectId {
         Self { hash: Sha1::null() }
     }
 
-    pub fn from_str(s: &str) -> Option<ObjectId> { // TODO: error code
+    pub fn from_str(s: &str) -> Option<ObjectId> {
         Sha1::from_str(s).map(|hash| Self { hash })
     }
 

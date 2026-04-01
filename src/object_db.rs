@@ -24,7 +24,7 @@ pub enum Error {
     CreateDirFailed(PathBuf, io::Error),
 
     #[error("error writing to file: {0}")]
-    WriteToFileFailed(io::Error)
+    WriteToFileFailed(io::Error),
 }
 
 pub fn hash_buffer(buffer: &[u8], object_type: ObjectType) -> ObjectId {
@@ -136,7 +136,7 @@ impl ObjectDB {
         let path = self.objects_dir().join("tmp");
         match File::create(path.as_path()) {
             Ok(file) => Ok((file, path)),
-            Err(e) => Err(Error::CreateTmpFileFailed(e))
+            Err(e) => Err(Error::CreateTmpFileFailed(e)),
         }
     }
 }

@@ -29,7 +29,11 @@ impl<'a> FromIndex<'a> {
         Ok(id)
     }
 
-    fn write_tree_impl(&self, dir: &[u8], start: usize) -> Result<(usize, ObjectId), object_db::Error> {
+    fn write_tree_impl(
+        &self,
+        dir: &[u8],
+        start: usize,
+    ) -> Result<(usize, ObjectId), object_db::Error> {
         let mut i = start;
         let mut builder = TreeBuilder::new();
         while i < self.index.count_entries() {
@@ -52,12 +56,12 @@ impl<'a> FromIndex<'a> {
                     let (next, id) = self.write_tree_impl(path, i)?;
                     builder.add_entry(GIT_MODE_TREE, mid, &id);
                     i = next;
-                }
+                },
                 None => {
                     // File or gitlink
                     builder.add_entry(entry.mode, rest, &entry.id);
                     i += 1;
-                }
+                },
             };
         }
 

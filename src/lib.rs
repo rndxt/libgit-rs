@@ -14,16 +14,16 @@ pub use crate::repo::RepositoryInitOptions;
 
 pub use crate::tree::write_index_to_tree;
 
+pub mod commit;
 mod index;
 mod object_db;
 pub mod object_id;
 mod object_type;
 mod repo;
 mod sha1;
-pub mod tree;
-pub mod commit;
-pub mod time;
 pub mod signature;
+pub mod time;
+pub mod tree;
 
 pub const GIT_MODE_BLOB: u32 = 0o100644;
 pub const GIT_MODE_TREE: u32 = 0o040000;

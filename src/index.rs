@@ -139,10 +139,10 @@ impl Index {
         match self.find_by_raw_path(&entry.path[..]) {
             Ok(i) => {
                 self.entries[i] = entry;
-            }
+            },
             Err(i) => {
                 self.entries.insert(i, entry);
-            }
+            },
         };
     }
 
