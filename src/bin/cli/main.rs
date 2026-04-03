@@ -26,8 +26,8 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Command {
     Init,
-    HashBlob { file: PathBuf },
-    WriteBlob { file: PathBuf },
+    GetId { file: PathBuf },
+    StoreToOdb { file: PathBuf },
     ParseIndex,
     AddToIndex { file: PathBuf },
     RemoveFromIndex { file: PathBuf },
@@ -44,7 +44,7 @@ fn init(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn odb_write_blob(repo: &Path, path: &Path) -> Result<()> {
+fn store_file_to_odb(repo: &Path, path: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
 
     let file = File::open(path)?;
@@ -56,7 +56,7 @@ fn odb_write_blob(repo: &Path, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn hash_blob(path: &Path) -> Result<()> {
+fn get_object_id(path: &Path) -> Result<()> {
     let id = hash_file(path, ObjectType::Blob)?;
     println!("{}", id.to_string());
     Ok(())
@@ -121,8 +121,8 @@ fn run() -> Result<()> {
     let args = Args::parse();
     match args.command {
         Command::Init => init(&current_dir),
-        Command::HashBlob { file } => hash_blob(&file),
-        Command::WriteBlob { file } => odb_write_blob(&current_dir, &file),
+        Command::GetId { file } => get_object_id(&file),
+        Command::StoreToOdb { file } => store_file_to_odb(&current_dir, &file),
         Command::ParseIndex => parse_index(&current_dir),
         Command::AddToIndex { file } => add_to_index(&current_dir, &file),
         Command::RemoveFromIndex { file } => remove_from_index(&current_dir, &file),
