@@ -99,26 +99,18 @@ impl Index {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Index, OpenIndexError> {
-        let mut index_file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) => return Err(OpenIndexError::FileNotFound(e)),
-        };
-
         // On files > 32 KB, Git uses mmap(2) call.
         // libgit2 always write all to memory.
         // For convenience, do same.
         let mut buffer = Vec::new();
-        if let Err(e) = index_file.read_to_end(&mut buffer) {
-            return Err(OpenIndexError::ReadFileFailed(e));
-        }
+        File::open(path)
+            .map_err(OpenIndexError::FileNotFound)?
+            .read_to_end(&mut buffer)
+            .map_err(OpenIndexError::ReadFileFailed)?;
 
-        let mut parser = IndexParser::new(&buffer);
-        let index = match parser.parse_index() {
-            Ok(index) => index,
-            Err(e) => return Err(OpenIndexError::ParseFailed(e)),
-        };
-
-        Ok(index)
+        IndexParser::new(&buffer)
+            .parse_index()
+            .map_err(OpenIndexError::ParseFailed)
     }
 
     pub fn find_by_path<P: AsRef<Path>>(&self, path: P) -> Result<usize, usize> {
