@@ -14,8 +14,21 @@ pub struct Repository {
     git_dir: PathBuf,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("already inited")]
+    AlreadyInited,
+}
+
 impl Repository {
-    pub fn create_new(path: &Path, options: &RepositoryInitOptions) -> io::Result<Self> {
+    pub fn create_new(path: &Path, options: &RepositoryInitOptions) -> Result<Self, Error> {
+        if Path::exists(&path.join(".git")) {
+            return Err(Error::AlreadyInited);
+        }
+
         let git_dir = RepositoryBuilder::new(path)
             .create_git_dir()?
             .create_info_dir()?
