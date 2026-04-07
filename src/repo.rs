@@ -45,7 +45,6 @@ impl Repository {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        // TODO: validate path
         let git_dir = path.as_ref().join(".git");
         let repo = Self { git_dir };
         Ok(repo)
