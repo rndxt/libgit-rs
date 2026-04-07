@@ -24,7 +24,8 @@ pub enum Error {
 }
 
 impl Repository {
-    pub fn create_new(path: &Path, options: &RepositoryInitOptions) -> Result<Self, Error> {
+    pub fn create_new<P: AsRef<Path>>(path: P, options: &RepositoryInitOptions) -> Result<Self, Error> {
+        let path = path.as_ref();
         if Path::exists(&path.join(".git")) {
             return Err(Error::AlreadyInited);
         }
