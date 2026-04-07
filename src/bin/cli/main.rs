@@ -36,9 +36,6 @@ enum Command {
     AddToIndex {
         file: PathBuf,
     },
-    FileToHex {
-        path: PathBuf,
-    },
     RemoveFromIndex {
         file: PathBuf,
     },
