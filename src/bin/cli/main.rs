@@ -32,7 +32,7 @@ enum Command {
     AddToIndex { file: PathBuf },
     RemoveFromIndex { file: PathBuf },
     IndexToTree,
-    CommitIndex,
+    IndexToCommit,
 }
 
 fn init(path: &Path) -> Result<()> {
@@ -94,7 +94,7 @@ fn add_to_index(repo: &Path, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn commit_index(repo: &Path) -> Result<()> {
+fn index_to_commit(repo: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
 
     let author = AuthorInfo::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
@@ -127,7 +127,7 @@ fn run() -> Result<()> {
         Command::AddToIndex { file } => add_to_index(&current_dir, &file),
         Command::RemoveFromIndex { file } => remove_from_index(&current_dir, &file),
         Command::IndexToTree => index_to_tree(&current_dir),
-        Command::CommitIndex => commit_index(&current_dir),
+        Command::IndexToCommit => index_to_commit(&current_dir),
     }
 }
 
