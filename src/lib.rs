@@ -19,6 +19,7 @@ mod index;
 mod object_db;
 pub mod object_id;
 mod object_type;
+pub mod refs;
 mod repo;
 mod sha1;
 pub mod signature;

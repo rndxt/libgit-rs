@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::Index;
 use crate::index::OpenIndexError;
 use crate::object_db::ObjectDB;
+use crate::refs::Refs;
 
 pub struct RepositoryInitOptions {
     pub default_branch: String,
@@ -59,6 +60,10 @@ impl Repository {
     pub fn object_db(&self) -> ObjectDB {
         let objects_dir = self.git_dir().join("objects");
         ObjectDB::new(objects_dir.as_path())
+    }
+
+    pub fn refs(&self) -> Refs {
+        Refs::new(&self.git_dir)
     }
 
     pub fn git_dir(&'_ self) -> &Path {

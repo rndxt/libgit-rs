@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use git_rs::add_path_to_index;
 use git_rs::hash_file;
 use git_rs::signature::{AuthorInfo, CommitterInfo};
 use git_rs::write_index;
 use git_rs::write_index_to_tree;
+use git_rs::{ObjectId, add_path_to_index};
 use git_rs::{ObjectType, remove_path_from_index};
 use git_rs::{Repository, RepositoryInitOptions};
 
@@ -26,13 +26,28 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Command {
     Init,
-    GetId { file: PathBuf },
-    StoreToOdb { file: PathBuf },
+    GetId {
+        file: PathBuf,
+    },
+    StoreToOdb {
+        file: PathBuf,
+    },
     ParseIndex,
-    AddToIndex { file: PathBuf },
-    RemoveFromIndex { file: PathBuf },
+    AddToIndex {
+        file: PathBuf,
+    },
+    FileToHex {
+        path: PathBuf,
+    },
+    RemoveFromIndex {
+        file: PathBuf,
+    },
     IndexToTree,
     IndexToCommit,
+    UpdateBranch {
+        branch_name: String,
+        commit_id: String,
+    },
 }
 
 fn init(path: &Path) -> Result<()> {
@@ -100,8 +115,11 @@ fn index_to_commit(repo: &Path) -> Result<()> {
     let author = AuthorInfo::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
     let commiter =
         CommitterInfo::build("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
-    let message = "Commit is created";
-    let parents = &[];
+    let message = "Commit Message";
+
+    let refs = repo.refs();
+    let head_branch = refs.resolve_symbolic_ref("HEAD")?;
+    let parents = &[head_branch.target];
 
     let commit_id = create_commit_from_index(&repo, author, commiter, message, parents)?;
     println!("{}", commit_id.to_string());
@@ -113,6 +131,14 @@ fn remove_from_index(repo: &Path, path: &Path) -> Result<()> {
     let mut index = repo.read_index()?;
     remove_path_from_index(path, &mut index)?;
     write_index(&repo, &index)?;
+    Ok(())
+}
+
+fn update_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let refs = repo.refs();
+    let commit_id = ObjectId::from_str(commit_id.trim_ascii()).unwrap();
+    refs.update_branch(branch_name, commit_id)?;
     Ok(())
 }
 
@@ -128,6 +154,10 @@ fn run() -> Result<()> {
         Command::RemoveFromIndex { file } => remove_from_index(&current_dir, &file),
         Command::IndexToTree => index_to_tree(&current_dir),
         Command::IndexToCommit => index_to_commit(&current_dir),
+        Command::UpdateBranch {
+            branch_name,
+            commit_id,
+        } => update_branch(&current_dir, branch_name, commit_id),
     }
 }
 
