@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,9 @@ pub enum Error {
 
     #[error("invalid reference name: at index {0}")]
     InvalidRefName(usize),
+
+    #[error("cannot create refs/heads/{0}: {1}")]
+    FailedCreateBranchFile(String, io::Error),
 }
 
 pub struct Reference {
@@ -58,7 +61,15 @@ impl Refs {
         }
 
         let branch_path = self.get_branch_dir().join(&branch_name);
-        let mut file = File::create_new(branch_path)?;
+        if let Err(e) = fs::create_dir_all(branch_path.parent().unwrap()) {
+            return Err(Error::FailedCreateBranchFile(branch_name, e));
+        }
+
+        let mut file = match File::create_new(branch_path) {
+            Ok(file) => file,
+            Err(e) => return Err(Error::FailedCreateBranchFile(branch_name, e)),
+        };
+
         io::copy(&mut target_commit.to_string().as_bytes(), &mut file)?;
         let reference = Reference {
             name: branch_name,
