@@ -4,6 +4,15 @@ use sha1::{Digest, Sha1 as Sha1Internal};
 
 pub const SHA1_SIZE_IN_BYTES: usize = 20;
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("invalid SHA-1")]
+    InvalidData,
+
+    #[error("wrong buffer size: {0}")]
+    WrongBufferSize(usize),
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Sha1(pub [u8; SHA1_SIZE_IN_BYTES]);
 
@@ -16,21 +25,20 @@ impl Sha1 {
         Self(*bytes)
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.len() != SHA1_SIZE_IN_BYTES {
-            return None;
+            return Err(Error::WrongBufferSize(bytes.len()));
         }
 
         let mut hash = Self::null();
         hash.0.copy_from_slice(bytes);
-        Some(hash)
+        Ok(hash)
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
-        match base16ct::lower::decode_vec(s.as_bytes()) {
-            Ok(vec) => Sha1::from_bytes(&vec),
-            _ => None,
-        }
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        base16ct::lower::decode_vec(s.as_bytes())
+            .map_err(|_| Error::InvalidData)
+            .and_then(|v| Sha1::from_bytes(&v))
     }
 
     pub fn to_string(&self) -> String {

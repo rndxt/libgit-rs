@@ -351,7 +351,7 @@ impl<'a> EntryParser<'a> {
     fn parse_object_id(&mut self) -> Option<ObjectId> {
         let hash = self.data.split_off(..SHA1_SIZE_IN_BYTES)?;
         self.consumed += hash.len();
-        ObjectId::from_bytes(hash)
+        ObjectId::from_bytes(hash).ok()
     }
 
     fn parse_path(&mut self, flags: u16) -> Option<Vec<u8>> {

@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::object_id::ObjectId;
+use crate::object_id::{self, ObjectId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -15,8 +15,8 @@ pub enum Error {
     #[error("branch does not exists")]
     BranchNotFound,
 
-    #[error("branch contains invalid commit id")]
-    InvalidCommitId,
+    #[error("branch contains invalid commit id: {0}")]
+    InvalidCommitId(object_id::Error),
 
     #[error("invalid reference name: at index {0}")]
     InvalidRefName(usize),
@@ -82,7 +82,7 @@ impl Refs {
         let file = File::open(branch_path)?;
         let s = io::read_to_string(file)?;
         println!("{}", s);
-        let commit_id = ObjectId::from_str(s.trim_ascii_end()).ok_or(Error::InvalidCommitId)?;
+        let commit_id = ObjectId::from_str(s.trim_ascii_end()).map_err(Error::InvalidCommitId)?;
         let reference = Reference {
             name: name.to_string(),
             target: commit_id,
