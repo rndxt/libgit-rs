@@ -4,18 +4,17 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use git_rs::hash_file;
+use git_rs::commit::create_commit_from_index;
+use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
+use git_rs::object_db::hash_file;
+use git_rs::object_id::ObjectId;
+use git_rs::object_type::ObjectType;
+use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo};
-use git_rs::write_index;
-use git_rs::write_index_to_tree;
-use git_rs::{ObjectId, add_path_to_index};
-use git_rs::{ObjectType, remove_path_from_index};
-use git_rs::{Repository, RepositoryInitOptions};
+use git_rs::time::Time;
+use git_rs::tree::write_index_to_tree;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-use git_rs::commit::create_commit_from_index;
-use git_rs::time::Time;
 
 #[derive(Parser, Debug)]
 struct Args {

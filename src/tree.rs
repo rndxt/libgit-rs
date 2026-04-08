@@ -1,7 +1,9 @@
-use crate::Index;
-use crate::ObjectId;
+use crate::GIT_MODE_TREE;
+use crate::index::Index;
+use crate::object_db::hash_buffer;
 use crate::object_db::{self, ObjectDB};
-use crate::{GIT_MODE_TREE, ObjectType, hash_buffer};
+use crate::object_id::ObjectId;
+use crate::object_type::ObjectType;
 
 pub fn write_index_to_tree(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
@@ -98,7 +100,7 @@ impl TreeBuilder {
 mod tests {
     use super::*;
     use crate::testing;
-    use crate::{Index, IndexEntry, IndexTime};
+    use crate::index::{Index, IndexEntry, IndexTime};
 
     #[test]
     fn index_to_tree() -> testing::Result<()> {

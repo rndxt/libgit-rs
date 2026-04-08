@@ -1,30 +1,15 @@
-pub use crate::index::add_path_to_index;
-pub use crate::index::remove_path_from_index;
-pub use crate::index::write_index;
-pub use crate::index::{Index, IndexEntry, IndexTime};
-
-pub use crate::object_db::hash_buffer;
-pub use crate::object_db::hash_file;
-
-pub use crate::object_id::ObjectId;
-pub use crate::object_type::ObjectType;
-
-pub use crate::repo::Repository;
-pub use crate::repo::RepositoryInitOptions;
-
-pub use crate::tree::write_index_to_tree;
-
 pub mod commit;
-mod index;
-mod object_db;
+pub mod index;
+pub mod object_db;
 pub mod object_id;
-mod object_type;
+pub mod object_type;
 pub mod refs;
-mod repo;
-mod sha1;
+pub mod repo;
 pub mod signature;
 pub mod time;
 pub mod tree;
+
+mod sha1;
 
 pub const GIT_MODE_BLOB: u32 = 0o100644;
 pub const GIT_MODE_TREE: u32 = 0o040000;

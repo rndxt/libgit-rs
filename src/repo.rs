@@ -2,8 +2,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::Index;
-use crate::index::OpenIndexError;
+use crate::index::{Index, OpenIndexError};
 use crate::object_db::ObjectDB;
 use crate::refs::Refs;
 
@@ -25,7 +24,10 @@ pub enum Error {
 }
 
 impl Repository {
-    pub fn create_new<P: AsRef<Path>>(path: P, options: &RepositoryInitOptions) -> Result<Self, Error> {
+    pub fn create_new<P: AsRef<Path>>(
+        path: P,
+        options: &RepositoryInitOptions,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
         if Path::exists(&path.join(".git")) {
             return Err(Error::AlreadyInited);

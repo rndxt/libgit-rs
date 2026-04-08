@@ -3,13 +3,14 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
-use crate::ObjectId;
-use crate::Repository;
 use crate::object_db;
+use crate::object_id::ObjectId;
+use crate::object_type::ObjectType;
+use crate::repo::Repository;
 use crate::sha1::SHA1_SIZE_IN_BYTES;
 use crate::sha1::Sha1;
 use crate::sha1::Sha1Hasher;
-use crate::{GIT_MODE_BLOB, GIT_MODE_BLOB_EXECUTABLE, GIT_MODE_LINK, ObjectType};
+use crate::{GIT_MODE_BLOB, GIT_MODE_BLOB_EXECUTABLE, GIT_MODE_LINK};
 
 const INDEX_SIGNATURE: &[u8; 4] = b"DIRC";
 const INDEX_HEADER_SIZE: usize = 12;

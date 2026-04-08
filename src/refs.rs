@@ -1,10 +1,8 @@
-use std::{
-    fs::{File, OpenOptions},
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
-};
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
-use crate::ObjectId;
+use crate::object_id::ObjectId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

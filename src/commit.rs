@@ -1,10 +1,10 @@
 use crate::index::OpenIndexError;
 use crate::object_db;
-use crate::{ObjectType, write_index_to_tree};
-
-use crate::ObjectId;
-use crate::Repository;
+use crate::object_id::ObjectId;
+use crate::object_type::ObjectType;
+use crate::repo::Repository;
 use crate::signature::{AuthorInfo, CommitterInfo, Signature};
+use crate::tree::write_index_to_tree;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateCommitError {

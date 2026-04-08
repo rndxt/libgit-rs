@@ -1,5 +1,6 @@
-use sha1::{Digest, Sha1 as Sha1Internal};
 use std::io::Write;
+
+use sha1::{Digest, Sha1 as Sha1Internal};
 
 pub const SHA1_SIZE_IN_BYTES: usize = 20;
 
