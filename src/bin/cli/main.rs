@@ -40,6 +40,10 @@ enum Command {
     },
     IndexToTree,
     IndexToCommit,
+    CreateBranch {
+        branch_name: String,
+        commit_id: String,
+    },
     UpdateBranch {
         branch_name: String,
         commit_id: String,
@@ -138,6 +142,14 @@ fn update_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
     Ok(())
 }
 
+fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let commit_id = ObjectId::from_str(&commit_id)?;
+    let refs = repo.refs();
+    refs.create_branch(branch_name, commit_id)?;
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let current_dir = env::current_dir()?;
     let args = Args::parse();
@@ -154,6 +166,10 @@ fn run() -> Result<()> {
             branch_name,
             commit_id,
         } => update_branch(&current_dir, branch_name, commit_id),
+        Command::CreateBranch {
+            branch_name,
+            commit_id,
+        } => create_branch(&current_dir, branch_name, commit_id),
     }
 }
 
