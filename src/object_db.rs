@@ -97,13 +97,12 @@ impl ObjectDB {
         size: u64,
         object_type: ObjectType,
     ) -> Result<ObjectId, Error> {
-        let (tmp_file, path_tmp) = self.create_tmpfile()?;
+        let path_tmp = self.objects_dir().join("tmp");
+        let tmp_file = File::create(&path_tmp).map_err(Error::CreateTmpFileFailed)?;
 
-        let writer = ObjectWriter::new(tmp_file);
-        let id = match writer.write_object(data, size, object_type) {
-            Ok(id) => id,
-            Err(e) => return Err(Error::WriteToFileFailed(e)),
-        };
+        let id = ObjectWriter::new(tmp_file)
+            .write_object(data, size, object_type)
+            .map_err(Error::WriteToFileFailed)?;
 
         let hex_id = id.to_string();
         let mut odb_path = self.objects_dir().to_path_buf();
@@ -130,14 +129,6 @@ impl ObjectDB {
         // }
 
         Ok(id)
-    }
-
-    fn create_tmpfile(&self) -> Result<(File, PathBuf), Error> {
-        let path = self.objects_dir().join("tmp");
-        match File::create(path.as_path()) {
-            Ok(file) => Ok((file, path)),
-            Err(e) => Err(Error::CreateTmpFileFailed(e)),
-        }
     }
 }
 
