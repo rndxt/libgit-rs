@@ -7,6 +7,24 @@ use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 
+pub struct TreeEntry {
+    pub mode: u32,
+    pub filename: Vec<u8>,
+    pub id: ObjectId,
+}
+
+pub struct Tree {
+    pub entries: Vec<TreeEntry>,
+}
+
+impl Tree {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
 pub fn create_trees_from_index(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
     let writer = FromIndex::new(index, WriteCallback::WriteToDb(odb));
