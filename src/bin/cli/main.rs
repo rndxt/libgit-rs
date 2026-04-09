@@ -12,7 +12,7 @@ use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo};
 use git_rs::time::Time;
-use git_rs::tree::write_index_to_tree;
+use git_rs::tree::create_trees_from_index;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -96,7 +96,7 @@ fn index_to_tree(repo: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
     let odb = repo.object_db();
     let index = repo.read_index()?;
-    let id = write_index_to_tree(&odb, &index)?;
+    let id = create_trees_from_index(&odb, &index)?;
     println!("{}", id.to_string());
     Ok(())
 }

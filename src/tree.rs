@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use crate::GIT_MODE_TREE;
 use crate::index::Index;
 use crate::object_db::hash_buffer;
@@ -5,7 +7,7 @@ use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 
-pub fn write_index_to_tree(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
+pub fn create_trees_from_index(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
     let writer = FromIndex::new(index, WriteCallback::WriteToDb(odb));
     writer.write_tree()
@@ -37,7 +39,8 @@ impl<'a> FromIndex<'a> {
         start: usize,
     ) -> Result<(usize, ObjectId), object_db::Error> {
         let mut i = start;
-        let mut builder = TreeBuilder::new();
+        let mut writer = TreeWriter::new(Vec::new());
+
         while i < self.index.count_entries() {
             let entry = self.index.get_unchecked(i);
             let path = &entry.path[..];
@@ -55,16 +58,16 @@ impl<'a> FromIndex<'a> {
                 let (mid, _) = rest.split_at(slash);
                 let (path, _) = path.split_at(left.len() + mid.len() + 1);
                 let (next, id) = self.write_tree_impl(path, i)?;
-                builder.add_entry(GIT_MODE_TREE, mid, &id);
+                writer.write_entry(GIT_MODE_TREE, mid, &id).unwrap();
                 i = next;
             } else {
                 // File or gitlink
-                builder.add_entry(entry.mode, rest, &entry.id);
+                writer.write_entry(entry.mode, rest, &entry.id).unwrap();
                 i += 1;
             }
         }
 
-        let buffer = builder.buffer();
+        let buffer = writer.done();
         let id = match self.callback {
             WriteCallback::Dryrun => hash_buffer(&buffer, ObjectType::Tree),
             WriteCallback::WriteToDb(odb) => odb.write_raw(&buffer, ObjectType::Tree)?,
@@ -73,34 +76,41 @@ impl<'a> FromIndex<'a> {
     }
 }
 
-struct TreeBuilder {
-    buffer: Vec<u8>,
+struct TreeWriter<W: Write> {
+    dest: W,
 }
 
-impl TreeBuilder {
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
+impl<W: Write> TreeWriter<W> {
+    fn new(dest: W) -> Self {
+        Self { dest }
     }
 
-    fn add_entry(&mut self, mode: u32, path: &[u8], id: &ObjectId) {
-        let mode = format!("{:o}", mode);
-        self.buffer.extend_from_slice(mode.as_bytes());
-        self.buffer.push(b' ');
-        self.buffer.extend_from_slice(path);
-        self.buffer.push(b'\0');
-        self.buffer.extend_from_slice(id.as_bytes());
+    fn write_tree(&mut self, tree: &Tree) -> io::Result<()> {
+        for entry in &tree.entries {
+            self.write_entry(entry.mode, &entry.filename, &entry.id)?;
+        }
+        Ok(())
     }
 
-    fn buffer(self) -> Vec<u8> {
-        self.buffer
+    fn write_entry(&mut self, mode: u32, filename: &[u8], id: &ObjectId) -> io::Result<()> {
+        write!(self.dest, "{:o}", mode)?;
+        self.dest.write_all(b" ")?;
+        self.dest.write_all(filename)?;
+        self.dest.write_all(b"\0")?;
+        self.dest.write_all(id.as_bytes())?;
+        Ok(())
+    }
+
+    fn done(self) -> W {
+        self.dest
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing;
     use crate::index::{Index, IndexEntry, IndexTime};
+    use crate::testing;
 
     #[test]
     fn index_to_tree() -> testing::Result<()> {

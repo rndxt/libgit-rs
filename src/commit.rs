@@ -4,7 +4,7 @@ use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 use crate::repo::Repository;
 use crate::signature::{AuthorInfo, CommitterInfo, Signature};
-use crate::tree::write_index_to_tree;
+use crate::tree::create_trees_from_index;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateCommitError {
@@ -24,7 +24,7 @@ pub fn create_commit_from_index(
 ) -> Result<ObjectId, CreateCommitError> {
     let index = repo.read_index()?;
     let odb = repo.object_db();
-    let tree_id = write_index_to_tree(&odb, &index)?;
+    let tree_id = create_trees_from_index(&odb, &index)?;
     let raw_commit = get_raw_commit(tree_id, parents, author, committer, message);
     let commit_id = odb.write_raw(&raw_commit, ObjectType::Commit)?;
     Ok(commit_id)
