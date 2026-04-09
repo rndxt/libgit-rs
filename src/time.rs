@@ -1,6 +1,6 @@
 use chrono::Local;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Time {
     pub unix_time: u64,
     pub offset: i32,

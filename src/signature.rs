@@ -1,10 +1,14 @@
 use crate::time::Time;
 
+#[derive(Debug, Clone)]
 pub struct Signature {
     pub name: String,
     pub email: String,
     pub time: Time,
 }
+
+pub struct AuthorInfo(pub Signature);
+pub struct CommitterInfo(pub Signature);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -50,22 +54,4 @@ impl Signature {
 
 fn contain_angle_brackets(s: &str) -> bool {
     s.contains('<') || s.contains('>')
-}
-
-pub struct AuthorInfo(pub Signature);
-
-impl AuthorInfo {
-    pub fn build(name: &str, email: &str, time: Time) -> Result<AuthorInfo, Error> {
-        let sign = Signature::build(name, email, time)?;
-        Ok(AuthorInfo(sign))
-    }
-}
-
-pub struct CommitterInfo(pub Signature);
-
-impl CommitterInfo {
-    pub fn build(name: &str, email: &str, time: Time) -> Result<CommitterInfo, Error> {
-        let sign = Signature::build(name, email, time)?;
-        Ok(CommitterInfo(sign))
-    }
 }

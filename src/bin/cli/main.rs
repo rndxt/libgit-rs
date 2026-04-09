@@ -10,7 +10,7 @@ use git_rs::object_db::hash_file;
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
-use git_rs::signature::{AuthorInfo, CommitterInfo};
+use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
 use git_rs::time::Time;
 use git_rs::tree::create_trees_from_index;
 
@@ -112,16 +112,22 @@ fn add_to_index(repo: &Path, path: &Path) -> Result<()> {
 fn index_to_commit(repo: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
 
-    let author = AuthorInfo::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
+    let author = Signature::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
     let commiter =
-        CommitterInfo::build("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
+        Signature::build("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
     let message = "Commit Message";
 
     let refs = repo.refs();
     let head_branch = refs.resolve_symbolic_ref("HEAD")?;
     let parents = &[head_branch.target];
 
-    let commit_id = create_commit_from_index(&repo, author, commiter, message, parents)?;
+    let commit_id = create_commit_from_index(
+        &repo,
+        AuthorInfo(author),
+        CommitterInfo(commiter),
+        message,
+        parents,
+    )?;
     println!("{}", commit_id.to_string());
     Ok(())
 }
