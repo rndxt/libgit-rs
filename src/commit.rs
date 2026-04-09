@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use crate::index::OpenIndexError;
 use crate::object_db;
 use crate::object_id::ObjectId;
@@ -5,6 +7,32 @@ use crate::object_type::ObjectType;
 use crate::repo::Repository;
 use crate::signature::{AuthorInfo, CommitterInfo, Signature};
 use crate::tree::create_trees_from_index;
+
+pub struct Commit {
+    pub tree_id: ObjectId,
+    pub author: Signature,
+    pub committer: Signature,
+    pub message: String,
+    pub parents: Vec<ObjectId>,
+}
+
+impl Commit {
+    pub fn new(
+        tree_id: ObjectId,
+        parents: Vec<ObjectId>,
+        author: AuthorInfo,
+        committer: CommitterInfo,
+        message: String,
+    ) -> Self {
+        Self {
+            tree_id,
+            author: author.0,
+            committer: committer.0,
+            message,
+            parents: parents,
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateCommitError {
@@ -25,110 +53,73 @@ pub fn create_commit_from_index(
     let index = repo.read_index()?;
     let odb = repo.object_db();
     let tree_id = create_trees_from_index(&odb, &index)?;
-    let raw_commit = get_raw_commit(tree_id, parents, author, committer, message);
-    let commit_id = odb.write_raw(&raw_commit, ObjectType::Commit)?;
+    let mut writer = CommitWriter::new(Vec::new());
+    writer
+        .write_commit_ext(&tree_id, parents, &author.0, &committer.0, message)
+        .unwrap();
+    let buffer = writer.done();
+    let commit_id = odb.write_raw(&buffer, ObjectType::Commit)?;
     Ok(commit_id)
 }
 
-fn get_raw_commit(
-    tree_id: ObjectId,
-    parents: &[ObjectId],
-    author: AuthorInfo,
-    committer: CommitterInfo,
-    message: &str,
-) -> Vec<u8> {
-    let mut builder = RawCommitBuilder::new();
-    builder.add_tree(tree_id);
-    for parent in parents {
-        builder.add_parent_commit(*parent);
-    }
-    builder
-        .add_author(author)
-        .add_committer(committer)
-        .add_newline()
-        .add_message(message);
-    builder.build()
+struct CommitWriter<W: Write> {
+    dest: W,
 }
 
-struct RawCommitBuilder {
-    buffer: Vec<u8>,
-}
-
-impl RawCommitBuilder {
-    fn new() -> Self {
-        Self { buffer: vec![] }
+impl<W: Write> CommitWriter<W> {
+    fn new(dest: W) -> Self {
+        Self { dest }
     }
 
-    fn add_tree(&mut self, id: ObjectId) -> &mut Self {
-        self.add_object_info(b"tree", id)
+    fn write_commit(&mut self, commit: &Commit) -> io::Result<()> {
+        self.write_commit_ext(
+            &commit.tree_id,
+            &commit.parents,
+            &commit.author,
+            &commit.committer,
+            &commit.message,
+        )
     }
 
-    fn add_parent_commit(&mut self, id: ObjectId) -> &mut Self {
-        self.add_object_info(b"parent", id)
+    fn write_commit_ext(
+        &mut self,
+        tree_id: &ObjectId,
+        parents: &[ObjectId],
+        author: &Signature,
+        committer: &Signature,
+        message: &str,
+    ) -> io::Result<()> {
+        writeln!(self.dest, "tree {}", tree_id.to_string())?;
+        for parent in parents {
+            writeln!(self.dest, "parent {}", parent.to_string())?;
+        }
+
+        self.write_signature("author", author)?;
+        self.write_signature("committer", committer)?;
+        writeln!(&mut self.dest)?;
+        writeln!(&mut self.dest, "{}", message)?;
+        Ok(())
     }
 
-    fn add_author(&mut self, author: AuthorInfo) -> &mut Self {
-        self.add_signature(b"author", author.0)
-    }
+    fn write_signature(&mut self, role: &str, signature: &Signature) -> io::Result<()> {
+        let Signature { name, email, time } = signature;
 
-    fn add_committer(&mut self, committer: CommitterInfo) -> &mut Self {
-        self.add_signature(b"committer", committer.0)
-    }
-
-    fn add_newline(&mut self) -> &mut Self {
-        self.buffer.push(b'\n');
-        self
-    }
-
-    fn add_message(&mut self, message: &str) -> &mut Self {
-        self.buffer.extend_from_slice(message.as_bytes());
-        self.add_newline();
-        self
-    }
-
-    fn add_signature(&mut self, role: &[u8], signature: Signature) -> &mut Self {
-        let Signature {
-            name,
-            email,
-            time: mut when,
-        } = signature;
-        self.buffer.extend_from_slice(role);
-        self.buffer.push(b' ');
-        self.buffer.extend_from_slice(name.as_bytes());
-        self.buffer.push(b' ');
-        self.buffer.push(b'<');
-        self.buffer.extend_from_slice(email.as_bytes());
-        self.buffer.push(b'>');
-        self.buffer.push(b' ');
-        self.buffer
-            .extend_from_slice(when.unix_time.to_string().as_bytes());
-        self.buffer.push(b' ');
-        let sign = if when.offset < 0 {
-            when.offset = -when.offset;
-            b'-'
+        let (sign, offset) = if time.offset < 0 {
+            ('-', -time.offset)
         } else {
-            b'+'
+            ('+', time.offset)
         };
-        self.buffer.push(sign);
 
-        let hours = format!("{:02}", when.offset / 3600);
-        self.buffer.extend_from_slice(hours.as_bytes());
-
-        let minutes = format!("{:02}", when.offset % 3600);
-        self.buffer.extend_from_slice(minutes.as_bytes());
-        self.add_newline();
-        self
+        let hours = offset / 3600;
+        let minutes = offset % 3600;
+        writeln!(
+            self.dest,
+            "{} {} <{}> {} {}{:02}{:02}",
+            role, name, email, time.unix_time, sign, hours, minutes
+        )
     }
 
-    fn add_object_info(&mut self, name: &[u8], id: ObjectId) -> &mut Self {
-        self.buffer.extend_from_slice(name);
-        self.buffer.push(b' ');
-        self.buffer.extend_from_slice(id.to_string().as_bytes());
-        self.add_newline();
-        self
-    }
-
-    fn build(self) -> Vec<u8> {
-        self.buffer
+    fn done(self) -> W {
+        self.dest
     }
 }
