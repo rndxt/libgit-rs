@@ -11,19 +11,19 @@ use crate::sha1::Sha1Hasher;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("fail to create tmp file: {0}")]
+    #[error("cannot create tmp file: {0}")]
     CreateTmpFileFailed(io::Error),
 
-    #[error("fail to remove tmp file: {0}")]
+    #[error("cannot remove tmp file: {0}")]
     RemoveTmpFile(io::Error),
 
-    #[error("fail to rename tmp file to {0}: {1}")]
+    #[error("cannot rename tmp file to {0}: {1}")]
     RenameFile(PathBuf, io::Error),
 
-    #[error("fail to create dir {0}: {1}")]
-    CreateDirFailed(PathBuf, io::Error),
+    #[error("cannot create dir {0}")]
+    CreateDirFailed(io::Error),
 
-    #[error("error writing to file: {0}")]
+    #[error("cannot write to file: {0}")]
     WriteToFileFailed(io::Error),
 }
 
@@ -105,29 +105,18 @@ impl ObjectDB {
             .map_err(Error::WriteToFileFailed)?;
 
         let hex_id = id.to_string();
-        let mut odb_path = self.objects_dir().to_path_buf();
-        odb_path.push(&hex_id[..2]);
-        if let Err(e) = fs::create_dir(&odb_path)
-            && e.kind() != ErrorKind::AlreadyExists
-        {
-            return Err(Error::CreateDirFailed(odb_path, e));
-        }
+        let mut odb_path = self.objects_dir().join(&hex_id[..2]);
+        fs::create_dir_all(&odb_path).map_err(Error::CreateDirFailed)?;
 
         odb_path.push(&hex_id[2..]);
-
-        // TODO: Assume that if file already exists, then it is correct.
-        // Git does the same. But now for testing delete before write.
-        // if !Path::try_exists(&odb_path)? {
-        let _ = fs::remove_file(&odb_path);
-        if let Err(e) = fs::hard_link(&path_tmp, &odb_path) {
+        // Assume that if file already exists, then it is correct.
+        if let Err(e) = fs::hard_link(&path_tmp, &odb_path)
+            && e.kind() != ErrorKind::AlreadyExists
+        {
             return Err(Error::RenameFile(odb_path, e));
         }
 
-        if let Err(e) = fs::remove_file(path_tmp) {
-            return Err(Error::RemoveTmpFile(e));
-        }
-        // }
-
+        fs::remove_file(path_tmp).map_err(Error::RemoveTmpFile)?;
         Ok(id)
     }
 }

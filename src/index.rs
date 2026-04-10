@@ -546,8 +546,8 @@ pub enum UpdateIndexError {
     #[error("file not found: {0}")]
     FileNotFound(io::Error),
 
-    #[error("file not found: {0}")]
-    WriteObjectFailed(object_db::Error),
+    #[error("fail to store to ObjectDB: {0}")]
+    OdbStoreFailed(object_db::Error),
 }
 
 pub fn add_path_to_index(
@@ -562,10 +562,10 @@ pub fn add_path_to_index(
     }
 
     let file = File::open(path).map_err(UpdateIndexError::FileNotFound)?;
-    let db = repo.object_db();
-    let id = db
+    let odb = repo.object_db();
+    let id = odb
         .write_file(&file, &stat, ObjectType::Blob)
-        .map_err(UpdateIndexError::WriteObjectFailed)?;
+        .map_err(UpdateIndexError::OdbStoreFailed)?;
     let entry = create_index_entry(path, &stat, id);
     index.add(entry);
     Ok(())
