@@ -20,7 +20,7 @@ pub enum Error {
     #[error("cannot rename tmp file to {0}: {1}")]
     RenameFile(PathBuf, io::Error),
 
-    #[error("cannot create dir {0}")]
+    #[error("cannot create dir: {0}")]
     CreateDirFailed(io::Error),
 
     #[error("cannot write to file: {0}")]

@@ -58,37 +58,37 @@ pub struct IndexTime {
 #[derive(Debug, thiserror::Error)]
 pub enum ParsingError {
     #[error("index file too short")]
-    TooShort,
+    FileTooShort,
 
-    #[error("invalid index signature")]
+    #[error("invalid signature")]
     InvalidSignature,
 
-    #[error("unsupported index version: {0}")]
+    #[error("unsupported version: {0}")]
     UnsupportedVersion(u32),
 
-    #[error("unsupported index extension: {0}")]
+    #[error("unsupported extension: {0}")]
     UnsupportedExtension(String),
 
-    #[error("entry {0} parse failed")]
+    #[error("cannot parse entry {0}")]
     EntryParseFail(u32),
 
-    #[error("invalid index checksum")]
+    #[error("invalid checksum")]
     InvalidCheckSum,
 
-    #[error("stage entries is unordered")]
+    #[error("entries is unordered")]
     WrongEntriesOrder,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum OpenIndexError {
-    #[error("open index file failed")]
-    FileNotFound(std::io::Error),
+pub enum Error {
+    #[error("cannot open file: {0}")]
+    CannotOpenFile(std::io::Error),
+
+    #[error("cannot read file: {0}")]
+    ReadFileFailed(std::io::Error),
 
     #[error("invalid index: {0}")]
     ParseFailed(ParsingError),
-
-    #[error("read index file failed: {0}")]
-    ReadFileFailed(std::io::Error),
 }
 
 impl Index {
@@ -99,19 +99,19 @@ impl Index {
         }
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Index, OpenIndexError> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Index, Error> {
         // On files > 32 KB, Git uses mmap(2) call.
         // libgit2 always write all to memory.
         // For convenience, do same.
         let mut buffer = Vec::new();
         File::open(path)
-            .map_err(OpenIndexError::FileNotFound)?
+            .map_err(Error::CannotOpenFile)?
             .read_to_end(&mut buffer)
-            .map_err(OpenIndexError::ReadFileFailed)?;
+            .map_err(Error::ReadFileFailed)?;
 
         IndexParser::new(&buffer)
             .parse_index()
-            .map_err(OpenIndexError::ParseFailed)
+            .map_err(Error::ParseFailed)
     }
 
     pub fn find_by_path<P: AsRef<Path>>(&self, path: P) -> Result<usize, usize> {
@@ -178,7 +178,7 @@ impl<'a> IndexParser<'a> {
 
     fn parse_index(&mut self) -> Result<Index, ParsingError> {
         if self.data.len() < INDEX_HEADER_SIZE + SHA1_SIZE_IN_BYTES {
-            return Err(ParsingError::TooShort);
+            return Err(ParsingError::FileTooShort);
         }
 
         self.validate_checksum()?;
@@ -258,7 +258,7 @@ impl<'a> IndexParser<'a> {
             let (signature, rest) = self
                 .data
                 .split_first_chunk::<EXTENSION_SIGNATURE_SIZE>()
-                .ok_or(ParsingError::TooShort)?;
+                .ok_or(ParsingError::FileTooShort)?;
 
             if !is_extension_ignorable(signature) && !self.is_extension_supported(signature) {
                 let signature = str::from_utf8(signature).unwrap_or("unknown").to_string();
@@ -267,11 +267,11 @@ impl<'a> IndexParser<'a> {
 
             let (size, rest) = rest
                 .split_first_chunk::<4>()
-                .ok_or(ParsingError::TooShort)?;
+                .ok_or(ParsingError::FileTooShort)?;
             let size = u32::from_be_bytes(*size);
             let (_, rest) = rest
                 .split_at_checked(size as usize)
-                .ok_or(ParsingError::TooShort)?;
+                .ok_or(ParsingError::FileTooShort)?;
             self.data = rest;
         }
 

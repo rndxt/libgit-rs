@@ -6,14 +6,17 @@ use crate::object_id::{self, ObjectId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("IO error: {0}")]
-    Io(#[from] io::Error),
+    #[error("cannot open file: {0}")]
+    CannotOpenFile(io::Error),
+
+    #[error("cannot read from file: {0}")]
+    CannotReadFromFile(io::Error),
+
+    #[error("cannot write to file: {0}")]
+    CannotWriteToFile(io::Error),
 
     #[error("invalid symbolic ref")]
     InvalidSymbolicRef,
-
-    #[error("branch does not exists")]
-    BranchNotFound,
 
     #[error("branch contains invalid commit id: {0}")]
     InvalidCommitId(object_id::Error),
@@ -70,7 +73,8 @@ impl Refs {
             Err(e) => return Err(Error::FailedCreateBranchFile(branch_name, e)),
         };
 
-        io::copy(&mut target_commit.to_string().as_bytes(), &mut file)?;
+        io::copy(&mut target_commit.to_string().as_bytes(), &mut file)
+            .map_err(Error::CannotWriteToFile)?;
         let reference = Reference {
             name: branch_name,
             target: target_commit,
@@ -83,15 +87,17 @@ impl Refs {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(branch_path)?;
-        file.write_all(target_commit.to_string().as_bytes())?;
+            .open(branch_path)
+            .map_err(Error::CannotOpenFile)?;
+        file.write_all(target_commit.to_string().as_bytes())
+            .map_err(Error::CannotWriteToFile)?;
         Ok(())
     }
 
     pub fn lookup_branch(&self, name: &str) -> Result<Reference, Error> {
         let branch_path = self.get_branch_dir().join(&name);
-        let file = File::open(branch_path)?;
-        let s = io::read_to_string(file)?;
+        let file = File::open(branch_path).map_err(Error::CannotOpenFile)?;
+        let s = io::read_to_string(file).map_err(Error::CannotReadFromFile)?;
         println!("{}", s);
         let commit_id = ObjectId::from_str(s.trim_ascii_end()).map_err(Error::InvalidCommitId)?;
         let reference = Reference {
@@ -102,9 +108,12 @@ impl Refs {
     }
 
     pub fn resolve_symbolic_ref(&self, ref_name: &str) -> Result<Reference, Error> {
-        let mut ref_file = File::open(self.git_dir.join(&ref_name))?;
+        let mut ref_file =
+            File::open(self.git_dir.join(&ref_name)).map_err(Error::CannotOpenFile)?;
         let mut buffer = Vec::new();
-        ref_file.read_to_end(&mut buffer)?;
+        ref_file
+            .read_to_end(&mut buffer)
+            .map_err(Error::CannotReadFromFile)?;
 
         let prefix = b"ref: refs/heads/";
         if !buffer.starts_with(prefix) {

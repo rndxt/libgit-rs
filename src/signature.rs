@@ -12,16 +12,16 @@ pub struct CommitterInfo(pub Signature);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("email should not be empty")]
+    #[error("email is empty")]
     EmptyEmail,
 
-    #[error("name should not be empty")]
+    #[error("name is empty")]
     EmptyName,
 
-    #[error("email should not contain '<', '>' chars")]
+    #[error("email contains '<', '>' chars")]
     EmailContainsAngle,
 
-    #[error("name should not contain '<', '>' chars")]
+    #[error("name contains '<', '>' chars")]
     NameContainsAngle,
 }
 

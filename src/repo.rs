@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::index::{Index, OpenIndexError};
+use crate::index::{self, Index};
 use crate::object_db::ObjectDB;
 use crate::refs::Refs;
 
@@ -21,6 +21,9 @@ pub enum Error {
 
     #[error("already inited")]
     AlreadyInited,
+
+    #[error("cannot read Index: {0}")]
+    CannotReadIndex(#[from] index::Error),
 }
 
 impl Repository {
@@ -54,7 +57,7 @@ impl Repository {
         Ok(repo)
     }
 
-    pub fn read_index(&self) -> Result<Index, OpenIndexError> {
+    pub fn read_index(&self) -> Result<Index, index::Error> {
         let path = self.git_dir().join("index");
         Index::open(path)
     }

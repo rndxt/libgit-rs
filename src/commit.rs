@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::index::OpenIndexError;
+use crate::index;
 use crate::object_db;
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
@@ -35,12 +35,12 @@ impl Commit {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum CreateCommitError {
-    #[error(transparent)]
-    ReadIndexFailed(#[from] OpenIndexError),
+pub enum Error {
+    #[error("cannot read Index: {0}")]
+    CannotReadIndex(#[from] index::Error),
 
-    #[error(transparent)]
-    WriteTreeFailed(#[from] object_db::Error),
+    #[error("cannot store object to odb: {0}")]
+    OdbWriteFailed(#[from] object_db::Error),
 }
 
 pub fn create_commit_from_index(
@@ -49,7 +49,7 @@ pub fn create_commit_from_index(
     committer: CommitterInfo,
     message: &str,
     parents: &[ObjectId],
-) -> Result<ObjectId, CreateCommitError> {
+) -> Result<ObjectId, Error> {
     let index = repo.read_index()?;
     let odb = repo.object_db();
     let tree_id = create_trees_from_index(&odb, &index)?;
