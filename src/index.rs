@@ -3,6 +3,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
+use crate::FileMode;
 use crate::object_db;
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
@@ -10,7 +11,6 @@ use crate::repo::Repository;
 use crate::sha1::SHA1_SIZE_IN_BYTES;
 use crate::sha1::Sha1;
 use crate::sha1::Sha1Hasher;
-use crate::{GIT_MODE_BLOB, GIT_MODE_BLOB_EXECUTABLE, GIT_MODE_LINK};
 
 const INDEX_SIGNATURE: &[u8; 4] = b"DIRC";
 const INDEX_HEADER_SIZE: usize = 12;
@@ -615,13 +615,13 @@ fn create_index_entry(path: &Path, stat: &Metadata, id: ObjectId) -> IndexEntry 
 
 fn stat_mode_to_index_mode(stat: &Metadata) -> u32 {
     if stat.is_file() {
-        if stat.mode() & 0o100 != 0 {
-            GIT_MODE_BLOB_EXECUTABLE
+        if is_execute_bit_set(stat.mode()) {
+            FileMode::Executable.into()
         } else {
-            GIT_MODE_BLOB
+            FileMode::Blob.into()
         }
     } else if stat.is_symlink() {
-        GIT_MODE_LINK
+        FileMode::Link.into()
     } else {
         debug_assert!(false, "File type: {}", stat.mode());
         stat.mode()
@@ -633,6 +633,10 @@ pub fn remove_path_from_index(path: &Path, index: &mut Index) -> io::Result<()> 
         index.remove(i);
     }
     Ok(())
+}
+
+fn is_execute_bit_set(mode: u32) -> bool {
+    mode & 0o100 != 0
 }
 
 #[cfg(test)]

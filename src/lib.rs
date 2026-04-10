@@ -11,11 +11,26 @@ pub mod tree;
 
 mod sha1;
 
-pub const GIT_MODE_BLOB: u32 = 0o100644;
-pub const GIT_MODE_TREE: u32 = 0o040000;
-pub const GIT_MODE_BLOB_EXECUTABLE: u32 = 0o100755;
-pub const GIT_MODE_LINK: u32 = 0o120000;
-pub const GIT_MODE_COMMIT: u32 = 0o160000;
+#[derive(Debug, Clone, Copy)]
+enum FileMode {
+    Blob,
+    Executable,
+    Tree,
+    Link,
+    Commit,
+}
+
+impl From<FileMode> for u32 {
+    fn from(mode: FileMode) -> u32 {
+        match mode {
+            FileMode::Blob => 0o100644,
+            FileMode::Executable => 0o100755,
+            FileMode::Tree => 0o040000,
+            FileMode::Link => 0o120000,
+            FileMode::Commit => 0o160000,
+        }
+    }
+}
 
 #[cfg(test)]
 mod testing {

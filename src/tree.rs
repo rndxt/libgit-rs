@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::GIT_MODE_TREE;
+use crate::FileMode;
 use crate::index::Index;
 use crate::object_db::hash_buffer;
 use crate::object_db::{self, ObjectDB};
@@ -76,7 +76,7 @@ impl<'a> FromIndex<'a> {
                 let (mid, _) = rest.split_at(slash);
                 let (path, _) = path.split_at(left.len() + mid.len() + 1);
                 let (next, id) = self.write_tree_impl(path, i)?;
-                writer.write_entry(GIT_MODE_TREE, mid, &id).unwrap();
+                writer.write_entry(FileMode::Tree.into(), mid, &id).unwrap();
                 i = next;
             } else {
                 // File or gitlink
