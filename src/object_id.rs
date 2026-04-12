@@ -65,4 +65,12 @@ mod tests {
         assert!(ObjectId::from_bytes(long).is_err());
         Ok(())
     }
+
+    #[test]
+    fn from_bytes_and_from_str_equals() -> testing::Result<()> {
+        let bytes = b"\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b";
+        let str = "00685f1c068fc33230769178cfa3d3b71f8d994b";
+        assert_eq!(ObjectId::from_bytes(bytes).unwrap(), ObjectId::from_str(str).unwrap());
+        Ok(())
+    }
 }

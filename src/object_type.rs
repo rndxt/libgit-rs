@@ -9,6 +9,20 @@ pub enum ObjectType {
 }
 
 impl ObjectType {
+    pub fn from(data: &[u8]) -> Option<Self> {
+        if data.starts_with(b"blob") {
+            Some(ObjectType::Blob)
+        } else if data.starts_with(b"tree") {
+            Some(ObjectType::Tree)
+        } else if data.starts_with(b"commit") {
+            Some(ObjectType::Commit)
+        } else if data.starts_with(b"tag") {
+            Some(ObjectType::Tag)
+        } else {
+            None
+        }
+    }
+
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
             ObjectType::Blob => b"blob",

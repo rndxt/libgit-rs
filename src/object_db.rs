@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use flate2::read::ZlibDecoder;
 
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
@@ -25,6 +26,12 @@ pub enum Error {
 
     #[error("cannot write to file: {0}")]
     WriteToFileFailed(io::Error),
+
+    #[error("cannot load object: {0}")]
+    CannotLoadObject(io::Error),
+
+    #[error("invalid object")]
+    InvalidObject,
 }
 
 pub fn hash_buffer(buffer: &[u8], object_type: ObjectType) -> ObjectId {
@@ -118,6 +125,21 @@ impl ObjectDB {
 
         fs::remove_file(path_tmp).map_err(Error::RemoveTmpFile)?;
         Ok(id)
+    }
+
+    pub fn load_object(&self, id: ObjectId) -> Result<(ObjectType, Vec<u8>), Error> {
+        let id = id.to_string();
+        let mut path = PathBuf::from(self.objects_dir());
+        path.push(&id[..2]);
+        path.push(&id[2..]);
+        let file = File::open(path).map_err(Error::CannotLoadObject)?;
+        let mut decoder = ZlibDecoder::new(file);
+        let mut data = Vec::new();
+        decoder.read_to_end(&mut data).map_err(Error::CannotLoadObject)?;
+        let idx = data.iter().position(|b| *b == b'\0').ok_or(Error::InvalidObject)?;
+        let (header, rest) = data.split_at(idx);
+        let object_type = ObjectType::from(header).ok_or(Error::InvalidObject)?;
+        Ok((object_type, rest[1..].to_vec()))
     }
 }
 
