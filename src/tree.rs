@@ -1,4 +1,6 @@
+use std::collections::LinkedList;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crate::FileMode;
 use crate::index::Index;
@@ -6,6 +8,7 @@ use crate::object_db::hash_buffer;
 use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
+use crate::repo::Repository;
 use crate::sha1::SHA1_SIZE_IN_BYTES;
 
 #[derive(Debug, PartialEq)]
@@ -172,6 +175,118 @@ impl<W: Write> TreeWriter<W> {
     fn done(self) -> W {
         self.dest
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("object is not tree")]
+    NotTree,
+
+    #[error("invalid tree")]
+    InvalidObject,
+
+    #[error("cannot load object: {0}")]
+    CannotLoadObject(object_db::Error),
+
+    #[error("Empty directories hierarchy")]
+    EmptyDirs,
+}
+
+struct StackNode {
+    entries: Vec<TreeEntry>,
+    idx: usize,
+}
+
+pub struct TreeWalker<'a> {
+    repo: &'a Repository,
+    path: PathBuf,
+    stack: LinkedList<StackNode>,
+}
+
+impl<'a> TreeWalker<'a> {
+    fn advance_to_next_non_tree(&mut self) -> Result<(), Error> {
+        loop {
+            let top = self.stack.back().unwrap();
+            let entry = &top.entries[top.idx];
+            if entry.mode != FileMode::Tree.into() {
+                return Ok(());
+            }
+
+            // TODO: check cycles: A -> B, B -> A
+            let tree = read_tree_from_odb(self.repo, entry.id)?;
+            if tree.entries.is_empty() {
+                return Err(Error::EmptyDirs);
+            }
+
+            self.path.push(str::from_utf8(&entry.filename).unwrap());
+            self.stack.push_back(StackNode {
+                entries: tree.entries,
+                idx: 0,
+            });
+        }
+    }
+}
+
+impl<'a> TreeWalker<'a> {
+    pub fn new(id: ObjectId, repo: &'a Repository) -> Result<Self, Error> {
+        let mut walker = Self {
+            repo,
+            path: PathBuf::new(),
+            stack: LinkedList::new(),
+        };
+        let tree = read_tree_from_odb(repo, id)?;
+        if !tree.entries.is_empty() {
+            walker.stack.push_back(StackNode {
+                entries: tree.entries,
+                idx: 0,
+            });
+        }
+        walker.advance_to_next_non_tree()?;
+        Ok(walker)
+    }
+
+    pub fn current(&self) -> Option<(&TreeEntry, &[u8])> {
+        let top = self.stack.back()?;
+        debug_assert!(
+            top.idx < top.entries.len(),
+            "{} {}",
+            top.idx,
+            top.entries.len()
+        );
+        let entry = &top.entries[top.idx];
+        debug_assert_ne!(entry.mode, FileMode::Tree.into());
+        let path = &self.path.as_os_str().as_encoded_bytes();
+        Some((entry, path))
+    }
+
+    pub fn advance(&mut self) -> Result<(), Error> {
+        while let Some(top) = self.stack.back_mut() {
+            top.idx += 1;
+            if top.idx != top.entries.len() {
+                break;
+            }
+
+            self.stack.pop_back();
+            self.path.pop();
+        }
+
+        if self.stack.is_empty() {
+            return Ok(());
+        }
+
+        self.advance_to_next_non_tree()
+    }
+}
+
+fn read_tree_from_odb(repo: &Repository, id: ObjectId) -> Result<Tree, Error> {
+    let odb = repo.object_db();
+    let (object_type, data) = odb.load_object(id).map_err(Error::CannotLoadObject)?;
+    if object_type != ObjectType::Tree {
+        return Err(Error::NotTree);
+    }
+
+    let mut reader = TreeReader::new(&data[..]);
+    reader.read_tree().ok_or(Error::InvalidObject)
 }
 
 #[cfg(test)]
