@@ -6,13 +6,16 @@ use crate::object_db::hash_buffer;
 use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
+use crate::sha1::SHA1_SIZE_IN_BYTES;
 
+#[derive(Debug, PartialEq)]
 pub struct TreeEntry {
     pub mode: u32,
     pub filename: Vec<u8>,
     pub id: ObjectId,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Tree {
     pub entries: Vec<TreeEntry>,
 }
@@ -25,7 +28,10 @@ impl Tree {
     }
 }
 
-pub fn create_trees_from_index(odb: &ObjectDB, index: &Index) -> Result<ObjectId, object_db::Error> {
+pub fn create_trees_from_index(
+    odb: &ObjectDB,
+    index: &Index,
+) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
     let writer = FromIndex::new(index, WriteCallback::WriteToDb(odb));
     writer.write_tree()
@@ -94,6 +100,50 @@ impl<'a> FromIndex<'a> {
     }
 }
 
+pub struct TreeReader<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> TreeReader<'a> {
+    pub fn new(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+
+    pub fn read_tree(&mut self) -> Option<Tree> {
+        let mut tree = Tree::new();
+        loop {
+            if self.data.is_empty() {
+                break;
+            }
+
+            let space = self.data.iter().position(|c| *c == b' ')?;
+            let (mode, rest) = self.data.split_at(space);
+            let mode = str::from_utf8(mode).ok()?;
+            let mode = u32::from_str_radix(mode, 8).ok()?;
+            self.data = &rest[1..];
+
+            let null = self.data.iter().position(|c| *c == b'\0')?;
+            let (filename, rest) = rest[1..].split_at(null);
+            self.data = &rest[1..];
+
+            if self.data.len() < SHA1_SIZE_IN_BYTES {
+                return None;
+            }
+
+            let (id, rest) = self.data.split_at(SHA1_SIZE_IN_BYTES);
+            let id = ObjectId::from_bytes(id).ok()?;
+            self.data = rest;
+
+            tree.entries.push(TreeEntry {
+                mode,
+                filename: filename.to_vec(),
+                id,
+            });
+        }
+        Some(tree)
+    }
+}
+
 struct TreeWriter<W: Write> {
     dest: W,
 }
@@ -129,6 +179,41 @@ mod tests {
     use super::*;
     use crate::index::{Index, IndexEntry, IndexTime};
     use crate::testing;
+
+    #[test]
+    fn write_read_identity() -> testing::Result<()> {
+        let mut tree = Tree::new();
+        tree.entries.push(TreeEntry {
+            mode: 0o40000,
+            filename: b"dir".to_vec(),
+            id: ObjectId::from_bytes(
+                b"\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b",
+            )
+            .unwrap(),
+        });
+
+        let buffer = Vec::new();
+        let mut writer = TreeWriter::new(buffer);
+        let _ = writer.write_tree(&tree)?;
+        let buffer = writer.done();
+
+        let mut reader = TreeReader::new(&buffer[..]);
+        let parsed_tree = reader.read_tree().ok_or("failed")?;
+        assert_eq!(parsed_tree, tree);
+        Ok(())
+    }
+
+    #[test]
+    fn error_on_invalid_data() -> testing::Result<()> {
+        let data = b"40000 dir\0abcdef";
+        let mut reader = TreeReader::new(&data[..]);
+        assert!(reader.read_tree().is_none());
+
+        let data = b"40000 dir\0\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b100644";
+        let mut reader = TreeReader::new(&data[..]);
+        assert!(reader.read_tree().is_none());
+        Ok(())
+    }
 
     #[test]
     fn index_to_tree() -> testing::Result<()> {
