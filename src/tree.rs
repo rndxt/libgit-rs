@@ -36,71 +36,56 @@ pub fn create_trees_from_index(
     index: &Index,
 ) -> Result<ObjectId, object_db::Error> {
     // TODO: check conflicts
-    let writer = FromIndex::new(index, WriteCallback::WriteToDb(odb));
-    writer.write_tree()
+    let (_, id) = create_trees_from_index_impl(
+        index,
+        &mut |buffer| odb.write_raw(&buffer, ObjectType::Tree),
+        &[],
+        0,
+    )?;
+    Ok(id)
 }
 
-enum WriteCallback<'a> {
-    WriteToDb(&'a ObjectDB),
-    Dryrun,
-}
+fn create_trees_from_index_impl<F, E>(
+    index: &Index,
+    callback: &mut F,
+    dir: &[u8],
+    start: usize,
+) -> Result<(usize, ObjectId), E>
+where
+    F: FnMut(&[u8]) -> Result<ObjectId, E>,
+{
+    let mut i = start;
+    let mut buffer = Vec::new();
+    let mut writer = TreeWriter::new(&mut buffer);
 
-struct FromIndex<'a> {
-    index: &'a Index,
-    callback: WriteCallback<'a>,
-}
+    while i < index.count_entries() {
+        let entry = index.get_unchecked(i);
+        let path = &entry.path[..];
 
-impl<'a> FromIndex<'a> {
-    fn new(index: &'a Index, callback: WriteCallback<'a>) -> FromIndex<'a> {
-        Self { index, callback }
-    }
-
-    fn write_tree(&self) -> Result<ObjectId, object_db::Error> {
-        let (_, id) = self.write_tree_impl(&[], 0)?;
-        Ok(id)
-    }
-
-    fn write_tree_impl(
-        &self,
-        dir: &[u8],
-        start: usize,
-    ) -> Result<(usize, ObjectId), object_db::Error> {
-        let mut i = start;
-        let mut writer = TreeWriter::new(Vec::new());
-
-        while i < self.index.count_entries() {
-            let entry = self.index.get_unchecked(i);
-            let path = &entry.path[..];
-
-            if path.len() <= dir.len() {
-                break;
-            }
-
-            let (left, rest) = path.split_at(dir.len());
-            if left != dir {
-                break;
-            }
-
-            if let Some(slash) = rest.iter().position(|b| *b == b'/') {
-                let (mid, _) = rest.split_at(slash);
-                let (path, _) = path.split_at(left.len() + mid.len() + 1);
-                let (next, id) = self.write_tree_impl(path, i)?;
-                writer.write_entry(FileMode::Tree.into(), mid, &id).unwrap();
-                i = next;
-            } else {
-                // File or gitlink
-                writer.write_entry(entry.mode, rest, &entry.id).unwrap();
-                i += 1;
-            }
+        if path.len() <= dir.len() {
+            break;
         }
 
-        let buffer = writer.done();
-        let id = match self.callback {
-            WriteCallback::Dryrun => hash_buffer(&buffer, ObjectType::Tree),
-            WriteCallback::WriteToDb(odb) => odb.write_raw(&buffer, ObjectType::Tree)?,
-        };
-        Ok((i, id))
+        let (left, rest) = path.split_at(dir.len());
+        if left != dir {
+            break;
+        }
+
+        if let Some(slash) = rest.iter().position(|b| *b == b'/') {
+            let (mid, _) = rest.split_at(slash);
+            let (path, _) = path.split_at(left.len() + mid.len() + 1);
+            let (next, id) = create_trees_from_index_impl(index, callback, path, i)?;
+            writer.write_entry(FileMode::Tree.into(), mid, &id).unwrap();
+            i = next;
+        } else {
+            // File or gitlink
+            writer.write_entry(entry.mode, rest, &entry.id).unwrap();
+            i += 1;
+        }
     }
+
+    let id = callback(&buffer)?;
+    Ok((i, id))
 }
 
 pub struct TreeReader<'a> {
@@ -170,10 +155,6 @@ impl<W: Write> TreeWriter<W> {
         self.dest.write_all(b"\0")?;
         self.dest.write_all(id.as_bytes())?;
         Ok(())
-    }
-
-    fn done(self) -> W {
-        self.dest
     }
 }
 
@@ -291,6 +272,8 @@ fn read_tree_from_odb(repo: &Repository, id: ObjectId) -> Result<Tree, Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
+
     use super::*;
     use crate::index::{Index, IndexEntry, IndexTime};
     use crate::testing;
@@ -307,10 +290,9 @@ mod tests {
             .unwrap(),
         });
 
-        let buffer = Vec::new();
-        let mut writer = TreeWriter::new(buffer);
+        let mut buffer = Vec::new();
+        let mut writer = TreeWriter::new(&mut buffer);
         let _ = writer.write_tree(&tree)?;
-        let buffer = writer.done();
 
         let mut reader = TreeReader::new(&buffer[..]);
         let parsed_tree = reader.read_tree().ok_or("failed")?;
@@ -335,8 +317,14 @@ mod tests {
         let index = get_test_index();
         let expected_tree_id = "43a32e4561668fff56c5f453776061ae20b90fcc";
 
-        let writer = FromIndex::new(&index, WriteCallback::Dryrun);
-        let id = writer.write_tree()?;
+        let (_, id) = create_trees_from_index_impl(
+            &index,
+            &mut |buffer| -> Result<ObjectId, Infallible> {
+                Ok(hash_buffer(&buffer, ObjectType::Tree))
+            },
+            &[],
+            0,
+        )?;
         assert_eq!(expected_tree_id, id.to_string());
         Ok(())
     }
