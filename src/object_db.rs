@@ -3,8 +3,8 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
-use flate2::write::ZlibEncoder;
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
@@ -30,8 +30,11 @@ pub enum Error {
     #[error("cannot load object: {0}")]
     CannotLoadObject(io::Error),
 
-    #[error("invalid object")]
-    InvalidObject,
+    #[error("hash mismatch")]
+    HashMismatch,
+
+    #[error("object is corrupted")]
+    CorruptedObject,
 }
 
 pub fn hash_buffer(buffer: &[u8], object_type: ObjectType) -> ObjectId {
@@ -128,19 +131,49 @@ impl ObjectDB {
     }
 
     pub fn load_object(&self, id: ObjectId) -> Result<(ObjectType, Vec<u8>), Error> {
-        let id = id.to_string();
+        let hex = id.to_string();
         let mut path = PathBuf::from(self.objects_dir());
-        path.push(&id[..2]);
-        path.push(&id[2..]);
+        path.push(&hex[..2]);
+        path.push(&hex[2..]);
+
         let file = File::open(path).map_err(Error::CannotLoadObject)?;
         let mut decoder = ZlibDecoder::new(file);
         let mut data = Vec::new();
-        decoder.read_to_end(&mut data).map_err(Error::CannotLoadObject)?;
-        let idx = data.iter().position(|b| *b == b'\0').ok_or(Error::InvalidObject)?;
-        let (header, rest) = data.split_at(idx);
-        let object_type = ObjectType::from(header).ok_or(Error::InvalidObject)?;
-        Ok((object_type, rest[1..].to_vec()))
+        decoder
+            .read_to_end(&mut data)
+            .map_err(Error::CannotLoadObject)?;
+
+        let mut hasher = Sha1Hasher::new();
+        hasher.update(&data);
+        if ObjectId::from_sha1(hasher.finalize()) != id {
+            return Err(Error::HashMismatch);
+        }
+
+        parse_object_type_and_content(&data)
     }
+}
+
+fn parse_object_type_and_content(data: &[u8]) -> Result<(ObjectType, Vec<u8>), Error> {
+    let idx = data
+        .iter()
+        .position(|b| *b == b' ')
+        .ok_or(Error::CorruptedObject)?;
+    let (header, rest) = data.split_at(idx);
+    let object_type = ObjectType::from(header).ok_or(Error::CorruptedObject)?;
+
+    let rest = &rest[1..];
+    let idx = rest
+        .iter()
+        .position(|b| *b == b'\0')
+        .ok_or(Error::CorruptedObject)?;
+    let (size, rest) = rest.split_at(idx);
+    let size = str::from_utf8(size).map_err(|_| Error::CorruptedObject)?;
+    let size = usize::from_str_radix(size, 10).map_err(|_| Error::CorruptedObject)?;
+    if size != rest[1..].len() {
+        return Err(Error::CorruptedObject);
+    }
+
+    Ok((object_type, rest[1..].to_vec()))
 }
 
 struct ObjectWriter<W: Write> {
@@ -221,6 +254,15 @@ mod tests {
 
         assert_eq!(expected_oid, actual_oid);
         assert_eq!(expected_buffer, &buffer[..]);
+        Ok(())
+    }
+
+    #[test]
+    fn read_object() -> testing::Result<()> {
+        let data = b"blob 4\0abcd";
+        let (object_type, content) = parse_object_type_and_content(data)?;
+        assert_eq!(object_type, ObjectType::Blob);
+        assert_eq!(content, b"abcd");
         Ok(())
     }
 }
