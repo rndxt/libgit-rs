@@ -1,6 +1,7 @@
 use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
@@ -12,7 +13,7 @@ use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
 use git_rs::time::Time;
-use git_rs::tree::create_trees_from_index;
+use git_rs::tree::{TreeWalker, create_trees_from_index};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -24,30 +25,47 @@ struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create a new Git repository in the current folder
     Init,
-    GetId {
-        file: PathBuf,
-    },
-    StoreToOdb {
-        file: PathBuf,
-    },
+
+    /// Compute object ID for given file
+    GetId { file: PathBuf },
+
+    /// Create blob object from given file
+    StoreToOdb { file: PathBuf },
+
+    /// Read Index file of repository in the current folder and print its content
     ParseIndex,
-    AddToIndex {
-        file: PathBuf,
-    },
-    RemoveFromIndex {
-        file: PathBuf,
-    },
+
+    /// Add or update an index entry from a file on disk
+    AddToIndex { file: PathBuf },
+
+    /// Remove an index entry corresponding to a file on disk
+    RemoveFromIndex { file: PathBuf },
+
+    /// Create a tree object from the current index
     IndexToTree,
+
+    /// Create a commit object from current index
     IndexToCommit,
+
+    /// Create a new branch that points to a specified commit
     CreateBranch {
         branch_name: String,
         commit_id: String,
     },
+
+    /// Set branch to a specified commit
     UpdateBranch {
         branch_name: String,
         commit_id: String,
     },
+
+    /// Load Git object from Object Database and print it raw data
+    LoadFromOdb { id: String },
+
+    /// Print content of specified tree object
+    WalkTree { id: String },
 }
 
 fn init(path: &Path) -> Result<()> {
@@ -156,6 +174,31 @@ fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
     Ok(())
 }
 
+fn load_from_odb(repo: &Path, id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let id = ObjectId::from_str(&id)?;
+    let odb = repo.object_db();
+    let (object_type, data) = odb.load_object(id)?;
+
+    println!("{}: {:?}", object_type, data);
+    Ok(())
+}
+
+fn walk_tree(repo: &Path, id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let id = ObjectId::from_str(&id)?;
+    let mut walker = TreeWalker::new(id, &repo)?;
+    while let Some((entry, path)) = walker.current() {
+        if !path.is_empty() {
+            print!("{}/", str::from_utf8(path).unwrap());
+        }
+
+        println!("{}", str::from_utf8(&entry.filename).unwrap());
+        walker.advance()?;
+    }
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let current_dir = env::current_dir()?;
     let args = Args::parse();
@@ -176,11 +219,15 @@ fn run() -> Result<()> {
             branch_name,
             commit_id,
         } => create_branch(&current_dir, branch_name, commit_id),
+        Command::LoadFromOdb { id } => load_from_odb(&current_dir, id),
+        Command::WalkTree { id } => walk_tree(&current_dir, id),
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
+        return ExitCode::FAILURE;
     }
+    return ExitCode::SUCCESS;
 }
