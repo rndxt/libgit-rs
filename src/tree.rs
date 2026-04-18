@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use crate::FileMode;
 use crate::index::Index;
-use crate::object_db::hash_buffer;
 use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
@@ -160,11 +159,11 @@ impl<W: Write> TreeWriter<W> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("object is not tree")]
+    #[error("not a tree object")]
     NotTree,
 
     #[error("invalid tree")]
-    InvalidObject,
+    InvalidTree,
 
     #[error("cannot load object: {0}")]
     CannotLoadObject(object_db::Error),
@@ -267,7 +266,7 @@ fn read_tree_from_odb(repo: &Repository, id: ObjectId) -> Result<Tree, Error> {
     }
 
     let mut reader = TreeReader::new(&data[..]);
-    reader.read_tree().ok_or(Error::InvalidObject)
+    reader.read_tree().ok_or(Error::InvalidTree)
 }
 
 #[cfg(test)]
@@ -276,6 +275,7 @@ mod tests {
 
     use super::*;
     use crate::index::{Index, IndexEntry, IndexTime};
+    use crate::object_db::hash_buffer;
     use crate::testing;
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn error_on_invalid_data() -> testing::Result<()> {
+    fn read_returns_error_on_invalid_data() -> testing::Result<()> {
         let data = b"40000 dir\0abcdef";
         let mut reader = TreeReader::new(&data[..]);
         assert!(reader.read_tree().is_none());
@@ -315,7 +315,6 @@ mod tests {
     #[test]
     fn index_to_tree() -> testing::Result<()> {
         let index = get_test_index();
-        let expected_tree_id = "43a32e4561668fff56c5f453776061ae20b90fcc";
 
         let (_, id) = create_trees_from_index_impl(
             &index,
@@ -325,7 +324,8 @@ mod tests {
             &[],
             0,
         )?;
-        assert_eq!(expected_tree_id, id.to_string());
+
+        assert_eq!(id.to_string(), "43a32e4561668fff56c5f453776061ae20b90fcc");
         Ok(())
     }
 
