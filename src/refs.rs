@@ -84,15 +84,13 @@ impl Refs {
     }
 
     pub fn lookup_branch(&self, name: &str) -> Result<Reference, Error> {
-        let branch_path = self.get_branch_dir().join(&name);
-        let file = File::open(branch_path).map_err(Error::CannotOpenFile)?;
-        let s = io::read_to_string(file).map_err(Error::CannotReadFromFile)?;
-        let commit_id = ObjectId::from_str(s.trim_ascii_end()).map_err(Error::InvalidCommitId)?;
-        let reference = Reference {
-            name: name.to_string(),
-            target: commit_id,
-        };
-        Ok(reference)
+        let branch_path = self.get_branch_dir().join(name);
+        self.lookup_ref(name, &branch_path)
+    }
+
+    pub fn lookup_tag(&self, name: &str) -> Result<Reference, Error> {
+        let tag_path = self.get_tags_dir().join(name);
+        self.lookup_ref(name, &tag_path)
     }
 
     pub fn resolve_symbolic_ref(&self, ref_name: &str) -> Result<Reference, Error> {
@@ -126,7 +124,7 @@ impl Refs {
 }
 
 impl Refs {
-    pub fn create_ref(
+    fn create_ref(
         &self,
         name: &str,
         target_id: ObjectId,
@@ -144,6 +142,17 @@ impl Refs {
         let reference = Reference {
             name: name.to_string(),
             target: target_id,
+        };
+        Ok(reference)
+    }
+
+    fn lookup_ref(&self, name: &str, ref_path: &Path) -> Result<Reference, Error> {
+        let file = File::open(ref_path).map_err(Error::CannotOpenFile)?;
+        let str = io::read_to_string(file).map_err(Error::CannotReadFromFile)?;
+        let commit_id = ObjectId::from_str(str.trim_ascii_end()).map_err(Error::InvalidCommitId)?;
+        let reference = Reference {
+            name: name.to_string(),
+            target: commit_id,
         };
         Ok(reference)
     }
