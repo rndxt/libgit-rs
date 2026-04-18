@@ -53,11 +53,11 @@ pub fn create_commit_from_index(
     let index = repo.read_index()?;
     let odb = repo.object_db();
     let tree_id = create_trees_from_index(&odb, &index)?;
-    let mut writer = CommitWriter::new(Vec::new());
+    let mut buffer = Vec::new();
+    let mut writer = CommitWriter::new(&mut buffer);
     writer
         .write_commit_ext(&tree_id, parents, &author.0, &committer.0, message)
         .unwrap();
-    let buffer = writer.done();
     let commit_id = odb.write_raw(&buffer, ObjectType::Commit)?;
     Ok(commit_id)
 }
@@ -99,9 +99,5 @@ impl<W: Write> CommitWriter<W> {
         writeln!(self.dest)?;
         writeln!(self.dest, "{}", message)?;
         Ok(())
-    }
-
-    fn done(self) -> W {
-        self.dest
     }
 }
