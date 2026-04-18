@@ -12,7 +12,7 @@ use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
-use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id};
+use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name};
 use git_rs::time::Time;
 use git_rs::tree::{TreeWalker, create_trees_from_index};
 
@@ -87,7 +87,7 @@ enum Command {
     },
 
     LookupTag {
-        id: String,
+        str: String,
     },
 }
 
@@ -222,10 +222,13 @@ fn walk_tree(repo: &Path, id: String) -> Result<()> {
     Ok(())
 }
 
-fn lookup_tag(repo: &Path, id: String) -> Result<()> {
+fn lookup_tag(repo: &Path, str: String) -> Result<()> {
     let repo = Repository::open(repo)?;
-    let id = ObjectId::from_str(&id)?;
-    let tag = lookup_tag_by_id(&repo, id)?;
+    let tag = match ObjectId::from_str(&str) {
+        Ok(id) => lookup_tag_by_id(&repo, id),
+        Err(_) => lookup_tag_by_name(&repo, &str),
+    }?;
+
     println!("name: {}", tag.name);
     println!("tagger: {}", tag.tagger);
     println!("message: {}", tag.message);
@@ -277,7 +280,7 @@ fn run() -> Result<()> {
         Command::LoadFromOdb { id } => load_from_odb(&current_dir, id),
         Command::WalkTree { id } => walk_tree(&current_dir, id),
         Command::CreateTag { id, name, message } => create_tag(&current_dir, id, name, message),
-        Command::LookupTag { id } => lookup_tag(&current_dir, id),
+        Command::LookupTag { str } => lookup_tag(&current_dir, str),
     }
 }
 
