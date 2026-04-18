@@ -29,7 +29,7 @@ impl Commit {
             author: author.0,
             committer: committer.0,
             message,
-            parents: parents,
+            parents,
         }
     }
 }
@@ -94,29 +94,11 @@ impl<W: Write> CommitWriter<W> {
             writeln!(self.dest, "parent {}", parent.to_string())?;
         }
 
-        self.write_signature("author", author)?;
-        self.write_signature("committer", committer)?;
-        writeln!(&mut self.dest)?;
-        writeln!(&mut self.dest, "{}", message)?;
+        writeln!(self.dest, "author {}", author)?;
+        writeln!(self.dest, "committer {}", committer)?;
+        writeln!(self.dest)?;
+        writeln!(self.dest, "{}", message)?;
         Ok(())
-    }
-
-    fn write_signature(&mut self, role: &str, signature: &Signature) -> io::Result<()> {
-        let Signature { name, email, time } = signature;
-
-        let (sign, offset) = if time.offset < 0 {
-            ('-', -time.offset)
-        } else {
-            ('+', time.offset)
-        };
-
-        let hours = offset / 3600;
-        let minutes = offset % 3600;
-        writeln!(
-            self.dest,
-            "{} {} <{}> {} {}{:02}{:02}",
-            role, name, email, time.unix_time, sign, hours, minutes
-        )
     }
 
     fn done(self) -> W {

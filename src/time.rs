@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::Local;
 
 #[derive(Debug, Clone, Copy)]
@@ -22,6 +24,20 @@ impl Time {
             unix_time: seconds as u64,
             offset,
         }
+    }
+}
+
+impl fmt::Display for Time {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (sign, offset) = if self.offset < 0 {
+            ('-', -self.offset)
+        } else {
+            ('+', self.offset)
+        };
+
+        let hours = offset / 3600;
+        let minutes = offset % 3600;
+        write!(f, "{} {}{:02}{:02}", self.unix_time, sign, hours, minutes)
     }
 }
 

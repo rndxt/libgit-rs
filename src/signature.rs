@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::time::Time;
 
 #[derive(Debug, Clone)]
@@ -49,6 +51,13 @@ impl Signature {
             time,
         };
         Ok(sign)
+    }
+}
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Signature { name, email, time } = self;
+        write!(f, "{} <{}> {}", name, email, time)
     }
 }
 
