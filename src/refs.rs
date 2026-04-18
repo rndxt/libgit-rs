@@ -88,7 +88,7 @@ impl Refs {
         self.lookup_ref(name, &branch_path)
     }
 
-    pub fn lookup_tag(&self, name: &str) -> Result<Reference, Error> {
+    pub fn lookup_tag_ref(&self, name: &str) -> Result<Reference, Error> {
         let tag_path = self.get_tags_dir().join(name);
         self.lookup_ref(name, &tag_path)
     }
@@ -124,12 +124,7 @@ impl Refs {
 }
 
 impl Refs {
-    fn create_ref(
-        &self,
-        name: &str,
-        target_id: ObjectId,
-        path: &Path,
-    ) -> Result<Reference, Error> {
+    fn create_ref(&self, name: &str, target_id: ObjectId, path: &Path) -> Result<Reference, Error> {
         if let Err(idx) = validate_ref_name(name.as_bytes()) {
             return Err(Error::InvalidRefName(idx));
         }

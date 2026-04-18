@@ -10,6 +10,7 @@ pub mod tag;
 pub mod time;
 pub mod tree;
 
+mod binary;
 mod sha1;
 
 #[derive(Debug, Clone, Copy)]

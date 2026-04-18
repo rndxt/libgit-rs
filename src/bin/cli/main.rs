@@ -12,7 +12,7 @@ use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
-use git_rs::tag::{Tag, create_annotated_tag};
+use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id};
 use git_rs::time::Time;
 use git_rs::tree::{TreeWalker, create_trees_from_index};
 
@@ -30,19 +30,27 @@ enum Command {
     Init,
 
     /// Compute object ID for given file
-    GetId { file: PathBuf },
+    GetId {
+        file: PathBuf,
+    },
 
     /// Create blob object from given file
-    StoreToOdb { file: PathBuf },
+    StoreToOdb {
+        file: PathBuf,
+    },
 
     /// Read Index file of repository in the current folder and print its content
     ParseIndex,
 
     /// Add or update an index entry from a file on disk
-    AddToIndex { file: PathBuf },
+    AddToIndex {
+        file: PathBuf,
+    },
 
     /// Remove an index entry corresponding to a file on disk
-    RemoveFromIndex { file: PathBuf },
+    RemoveFromIndex {
+        file: PathBuf,
+    },
 
     /// Create a tree object from the current index
     IndexToTree,
@@ -63,15 +71,23 @@ enum Command {
     },
 
     /// Load Git object from Object Database and print it raw data
-    LoadFromOdb { id: String },
+    LoadFromOdb {
+        id: String,
+    },
 
     /// Print content of specified tree object
-    WalkTree { id: String },
+    WalkTree {
+        id: String,
+    },
 
     CreateTag {
         id: String,
         name: String,
         message: String,
+    },
+
+    LookupTag {
+        id: String,
     },
 }
 
@@ -206,6 +222,20 @@ fn walk_tree(repo: &Path, id: String) -> Result<()> {
     Ok(())
 }
 
+fn lookup_tag(repo: &Path, id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let id = ObjectId::from_str(&id)?;
+    let tag = lookup_tag_by_id(&repo, id)?;
+    println!("name: {}", tag.name);
+    println!("tagger: {}", tag.tagger);
+    println!("message: {}", tag.message);
+    println!(
+        "point-to: {} {}",
+        tag.object_type,
+        tag.object_id.to_string()
+    );
+    Ok(())
+}
 fn create_tag(repo: &Path, id: String, name: String, message: String) -> Result<()> {
     let repo = Repository::open(repo)?;
     let id = ObjectId::from_str(&id)?;
@@ -247,6 +277,7 @@ fn run() -> Result<()> {
         Command::LoadFromOdb { id } => load_from_odb(&current_dir, id),
         Command::WalkTree { id } => walk_tree(&current_dir, id),
         Command::CreateTag { id, name, message } => create_tag(&current_dir, id, name, message),
+        Command::LookupTag { id } => lookup_tag(&current_dir, id),
     }
 }
 

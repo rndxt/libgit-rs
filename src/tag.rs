@@ -1,8 +1,10 @@
 use std::io::{self, Write};
 
-use crate::{object_db, refs};
+use crate::binary::BinaryReader;
+use crate::object_db;
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
+use crate::refs;
 use crate::repo::Repository;
 use crate::signature::Signature;
 
@@ -19,8 +21,20 @@ pub enum Error {
     #[error("cannot create tag ref: {0}")]
     CannotCreateTag(#[from] refs::Error),
 
+    #[error("lookup tag ref failed: {0}")]
+    LookupTagRefFailed(refs::Error),
+
     #[error("cannot store tag object: {0}")]
     OdbWriteFailed(#[from] object_db::Error),
+
+    #[error("not a tag object")]
+    NotTag,
+
+    #[error("invalid tag")]
+    InvalidTag,
+
+    #[error("cannot read tag object: {0}")]
+    OdbReadFailed(object_db::Error),
 }
 
 pub fn create_annotated_tag(repo: &Repository, tag: &Tag) -> Result<ObjectId, Error> {
@@ -34,6 +48,25 @@ pub fn create_annotated_tag(repo: &Repository, tag: &Tag) -> Result<ObjectId, Er
     let refs = repo.refs();
     let _ = refs.create_tag_ref(&tag.name, tag_id)?;
     Ok(tag_id)
+}
+
+pub fn lookup_tag_by_id(repo: &Repository, id: ObjectId) -> Result<Tag, Error> {
+    let odb = repo.object_db();
+    let (object_type, data) = odb.load_object(id).map_err(Error::OdbReadFailed)?;
+    if object_type != ObjectType::Tag {
+        return Err(Error::NotTag);
+    }
+
+    let mut reader = TagReader::new(&data[..]);
+    reader.read_tag().ok_or(Error::InvalidTag)
+}
+
+pub fn lookup_tag_by_name(repo: &Repository, name: &str) -> Result<Tag, Error> {
+    let refs = repo.refs();
+    let tag_ref = refs
+        .lookup_tag_ref(&name)
+        .map_err(Error::LookupTagRefFailed)?;
+    lookup_tag_by_id(repo, tag_ref.target)
 }
 
 struct TagWriter<W: Write> {
@@ -71,9 +104,55 @@ impl<W: Write> TagWriter<W> {
         writeln!(self.dest, "{}", message)?;
         Ok(())
     }
+}
 
-    fn done(self) -> W {
-        self.dest
+pub struct TagReader<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> TagReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+
+    fn read_tag(&mut self) -> Option<Tag> {
+        let mut reader = BinaryReader::new(self.data);
+        reader.skip_prefix(b"object ")?;
+        let object_id = reader
+            .split_until_inclusive(b'\n')
+            .and_then(|bytes| str::from_utf8(bytes).ok())
+            .and_then(|str| ObjectId::from_str(str).ok())?;
+
+        reader.skip_prefix(b"type ")?;
+        let object_type = reader
+            .split_until_inclusive(b'\n')
+            .and_then(ObjectType::from)?;
+
+        reader.skip_prefix(b"tag ")?;
+        let name = reader
+            .split_until_inclusive(b'\n')
+            .and_then(|bytes| str::from_utf8(bytes).ok())
+            .map(str::to_string)?;
+
+        reader.skip_prefix(b"tagger ")?;
+        let tagger = reader
+            .split_until_inclusive(b'\n')
+            .and_then(Signature::try_from_bytes)?;
+
+        reader.skip_byte(b'\n')?;
+        let message = reader
+            .split_until_inclusive(b'\n')
+            .and_then(|bytes| str::from_utf8(bytes).ok())
+            .map(str::to_string)?;
+
+        let tag = Tag {
+            object_id,
+            object_type,
+            tagger,
+            name,
+            message,
+        };
+        Some(tag)
     }
 }
 
@@ -99,6 +178,34 @@ mod tests {
 
         let expected_data = b"object 85df50785d62d3b05ab03d9cbf7e4a0b49449730\ntype commit\ntag tag_name\ntagger author <author@email> 1771253662 +0300\n\nmessage\n";
         assert_eq!(expected_data, &buffer[..]);
+        Ok(())
+    }
+
+    #[test]
+    fn read_tag() -> testing::Result<()> {
+        let data = b"object 85df50785d62d3b05ab03d9cbf7e4a0b49449730\ntype commit\ntag tag_name\ntagger author <author@email> 1771253662 +0300\n\nmessage\n";
+
+        let mut reader = TagReader::new(&data[..]);
+        let tag = reader.read_tag().unwrap();
+
+        assert_eq!(
+            tag.object_id,
+            ObjectId::from_str("85df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap()
+        );
+        assert_eq!(tag.object_type, ObjectType::Commit);
+        assert_eq!(tag.name, "tag_name");
+        assert_eq!(
+            tag.tagger,
+            Signature {
+                name: String::from("author"),
+                email: String::from("author@email"),
+                time: Time {
+                    unix_time: 1771253662,
+                    offset: 10800
+                },
+            }
+        );
+        assert_eq!(tag.message, "message");
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
-use crate::sha1::{SHA1_SIZE_IN_BYTES, Sha1};
 pub use crate::sha1::Error;
+use crate::sha1::{SHA1_SIZE_IN_BYTES, Sha1};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectId {
@@ -68,9 +68,13 @@ mod tests {
 
     #[test]
     fn from_bytes_and_from_str_equals() -> testing::Result<()> {
-        let bytes = b"\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b";
+        let bytes =
+            b"\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b";
         let str = "00685f1c068fc33230769178cfa3d3b71f8d994b";
-        assert_eq!(ObjectId::from_bytes(bytes).unwrap(), ObjectId::from_str(str).unwrap());
+        assert_eq!(
+            ObjectId::from_bytes(bytes).unwrap(),
+            ObjectId::from_str(str).unwrap()
+        );
         Ok(())
     }
 }
