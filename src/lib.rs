@@ -6,6 +6,7 @@ pub mod object_type;
 pub mod refs;
 pub mod repo;
 pub mod signature;
+pub mod tag;
 pub mod time;
 pub mod tree;
 

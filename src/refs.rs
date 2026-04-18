@@ -9,11 +9,17 @@ pub enum Error {
     #[error("cannot open file: {0}")]
     CannotOpenFile(io::Error),
 
+    #[error("cannot create file: {0}")]
+    CreateFileFailed(io::Error),
+
     #[error("cannot read from file: {0}")]
     CannotReadFromFile(io::Error),
 
     #[error("cannot write to file: {0}")]
     CannotWriteToFile(io::Error),
+
+    #[error("cannot create dir: {0}")]
+    CreateDirFailed(io::Error),
 
     #[error("invalid symbolic ref")]
     InvalidSymbolicRef,
@@ -23,9 +29,6 @@ pub enum Error {
 
     #[error("invalid reference name: at index {0}")]
     InvalidRefName(usize),
-
-    #[error("cannot create refs/heads/{0}: {1}")]
-    FailedCreateBranchFile(String, io::Error),
 }
 
 pub struct Reference {
@@ -49,37 +52,23 @@ impl Refs {
     }
 
     pub fn get_branch_dir(&self) -> PathBuf {
-        let mut path = self.get_refs_dir();
-        path.push("heads");
-        path
+        self.git_dir.join("refs/heads")
+    }
+
+    pub fn get_tags_dir(&self) -> PathBuf {
+        self.git_dir.join("refs/tags")
+    }
+
+    pub fn create_tag_ref(&self, tag_name: &str, tag_id: ObjectId) -> Result<Reference, Error> {
+        self.create_ref(&tag_name, tag_id, &&self.get_tags_dir())
     }
 
     pub fn create_branch(
         &self,
-        branch_name: String,
+        branch_name: &str,
         target_commit: ObjectId,
     ) -> Result<Reference, Error> {
-        if let Err(idx) = validate_ref_name(branch_name.as_bytes()) {
-            return Err(Error::InvalidRefName(idx));
-        }
-
-        let branch_path = self.get_branch_dir().join(&branch_name);
-        if let Err(e) = fs::create_dir_all(branch_path.parent().unwrap()) {
-            return Err(Error::FailedCreateBranchFile(branch_name, e));
-        }
-
-        let mut file = match File::create_new(branch_path) {
-            Ok(file) => file,
-            Err(e) => return Err(Error::FailedCreateBranchFile(branch_name, e)),
-        };
-
-        io::copy(&mut target_commit.to_string().as_bytes(), &mut file)
-            .map_err(Error::CannotWriteToFile)?;
-        let reference = Reference {
-            name: branch_name,
-            target: target_commit,
-        };
-        Ok(reference)
+        self.create_ref(&branch_name, target_commit, &self.get_branch_dir())
     }
 
     pub fn update_branch(&self, branch_name: String, target_commit: ObjectId) -> Result<(), Error> {
@@ -98,7 +87,6 @@ impl Refs {
         let branch_path = self.get_branch_dir().join(&name);
         let file = File::open(branch_path).map_err(Error::CannotOpenFile)?;
         let s = io::read_to_string(file).map_err(Error::CannotReadFromFile)?;
-        println!("{}", s);
         let commit_id = ObjectId::from_str(s.trim_ascii_end()).map_err(Error::InvalidCommitId)?;
         let reference = Reference {
             name: name.to_string(),
@@ -134,6 +122,30 @@ impl Refs {
             Ok(s) => self.lookup_branch(&s),
             Err(e) => Err(Error::InvalidRefName(e.utf8_error().valid_up_to())),
         }
+    }
+}
+
+impl Refs {
+    pub fn create_ref(
+        &self,
+        name: &str,
+        target_id: ObjectId,
+        path: &Path,
+    ) -> Result<Reference, Error> {
+        if let Err(idx) = validate_ref_name(name.as_bytes()) {
+            return Err(Error::InvalidRefName(idx));
+        }
+
+        fs::create_dir_all(path).map_err(Error::CreateDirFailed)?;
+        let mut file = File::create_new(path.join(&name)).map_err(Error::CreateFileFailed)?;
+        io::copy(&mut target_id.to_string().as_bytes(), &mut file)
+            .map_err(Error::CannotWriteToFile)?;
+
+        let reference = Reference {
+            name: name.to_string(),
+            target: target_id,
+        };
+        Ok(reference)
     }
 }
 

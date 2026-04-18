@@ -12,6 +12,7 @@ use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
+use git_rs::tag::{Tag, create_annotated_tag};
 use git_rs::time::Time;
 use git_rs::tree::{TreeWalker, create_trees_from_index};
 
@@ -66,6 +67,12 @@ enum Command {
 
     /// Print content of specified tree object
     WalkTree { id: String },
+
+    CreateTag {
+        id: String,
+        name: String,
+        message: String,
+    },
 }
 
 fn init(path: &Path) -> Result<()> {
@@ -170,7 +177,7 @@ fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
     let repo = Repository::open(repo)?;
     let commit_id = ObjectId::from_str(&commit_id)?;
     let refs = repo.refs();
-    refs.create_branch(branch_name, commit_id)?;
+    refs.create_branch(&branch_name, commit_id)?;
     Ok(())
 }
 
@@ -199,6 +206,24 @@ fn walk_tree(repo: &Path, id: String) -> Result<()> {
     Ok(())
 }
 
+fn create_tag(repo: &Path, id: String, name: String, message: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let id = ObjectId::from_str(&id)?;
+    let tagger = Signature::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
+
+    let tag = Tag {
+        object_id: id,
+        object_type: ObjectType::Commit, // TODO
+        tagger,
+        name,
+        message,
+    };
+
+    let tag_id = create_annotated_tag(&repo, &tag)?;
+    println!("{}", tag_id.to_string());
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let current_dir = env::current_dir()?;
     let args = Args::parse();
@@ -221,6 +246,7 @@ fn run() -> Result<()> {
         } => create_branch(&current_dir, branch_name, commit_id),
         Command::LoadFromOdb { id } => load_from_odb(&current_dir, id),
         Command::WalkTree { id } => walk_tree(&current_dir, id),
+        Command::CreateTag { id, name, message } => create_tag(&current_dir, id, name, message),
     }
 }
 
