@@ -238,11 +238,7 @@ fn lookup_tag(repo: &Path, str: String) -> Result<()> {
     println!("name: {}", tag.name);
     println!("tagger: {}", tag.tagger);
     println!("message: {}", tag.message);
-    println!(
-        "point-to: {} {}",
-        tag.object_type,
-        tag.object_id
-    );
+    println!("point-to: {} {}", tag.object_type, tag.object_id);
     Ok(())
 }
 
@@ -307,11 +303,7 @@ fn print_object(repo: &Path, id: String) -> Result<()> {
             println!("name: {}", tag.name);
             println!("tagger: {}", tag.tagger);
             println!("message: {}", tag.message);
-            println!(
-                "point-to: {} {}",
-                tag.object_type,
-                tag.object_id
-            );
+            println!("point-to: {} {}", tag.object_type, tag.object_id);
         },
     };
     Ok(())

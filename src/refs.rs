@@ -59,8 +59,8 @@ impl Refs {
         self.git_dir.join("refs/tags")
     }
 
-    pub fn create_tag_ref(&self, tag_name: &str, tag_id: ObjectId) -> Result<Reference, Error> {
-        self.create_ref(&tag_name, tag_id, &&self.get_tags_dir())
+    pub fn create_tag_ref(&self, tag_name: &str, target_id: ObjectId) -> Result<Reference, Error> {
+        self.create_ref(&tag_name, target_id, &&self.get_tags_dir())
     }
 
     pub fn create_branch(

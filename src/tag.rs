@@ -50,6 +50,12 @@ pub fn create_annotated_tag(repo: &Repository, tag: &Tag) -> Result<ObjectId, Er
     Ok(tag_id)
 }
 
+pub fn create_light_tag(repo: &Repository, tag_name: &str, target_id: ObjectId) -> Result<(), Error> {
+    let refs = repo.refs();
+    let _ = refs.create_tag_ref(tag_name, target_id)?;
+    Ok(())
+}
+
 pub fn lookup_tag_by_id(repo: &Repository, id: ObjectId) -> Result<Tag, Error> {
     let odb = repo.object_db();
     let (object_type, data) = odb.load_object(id).map_err(Error::OdbReadFailed)?;
