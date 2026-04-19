@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::FileMode;
+use crate::binary::BinaryReader;
 use crate::index::Index;
 use crate::object_db::{self, ObjectDB};
 use crate::object_id::ObjectId;
@@ -87,48 +88,28 @@ where
     Ok((i, id))
 }
 
-pub struct TreeReader<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> TreeReader<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
-        Self { data }
-    }
-
-    pub fn read_tree(&mut self) -> Option<Tree> {
-        let mut tree = Tree::new();
-        loop {
-            if self.data.is_empty() {
-                break;
-            }
-
-            let space = self.data.iter().position(|c| *c == b' ')?;
-            let (mode, rest) = self.data.split_at(space);
-            let mode = str::from_utf8(mode).ok()?;
-            let mode = u32::from_str_radix(mode, 8).ok()?;
-            self.data = &rest[1..];
-
-            let null = self.data.iter().position(|c| *c == b'\0')?;
-            let (filename, rest) = rest[1..].split_at(null);
-            self.data = &rest[1..];
-
-            if self.data.len() < SHA1_SIZE_IN_BYTES {
-                return None;
-            }
-
-            let (id, rest) = self.data.split_at(SHA1_SIZE_IN_BYTES);
-            let id = ObjectId::from_bytes(id).ok()?;
-            self.data = rest;
-
-            tree.entries.push(TreeEntry {
-                mode,
-                filename: filename.to_vec(),
-                id,
-            });
+pub fn read_tree_from_buffer(buffer: &[u8]) -> Option<Tree> {
+    let mut reader = BinaryReader::new(buffer);
+    let mut tree = Tree::new();
+    loop {
+        if reader.is_empty() {
+            break;
         }
-        Some(tree)
+
+        let mode = reader
+            .split_until_inclusive(b' ')
+            .and_then(|bytes| str::from_utf8(bytes).ok())
+            .and_then(|str| u32::from_str_radix(str, 8).ok())?;
+
+        let filename = reader.split_until_inclusive(b'\0')?.to_vec();
+
+        let id = reader
+            .split_n(SHA1_SIZE_IN_BYTES)
+            .and_then(|bytes| ObjectId::from_bytes(bytes).ok())?;
+
+        tree.entries.push(TreeEntry { mode, filename, id });
     }
+    Some(tree)
 }
 
 struct TreeWriter<W: Write> {
@@ -265,8 +246,7 @@ fn read_tree_from_odb(repo: &Repository, id: ObjectId) -> Result<Tree, Error> {
         return Err(Error::NotTree);
     }
 
-    let mut reader = TreeReader::new(&data[..]);
-    reader.read_tree().ok_or(Error::InvalidTree)
+    read_tree_from_buffer(&data).ok_or(Error::InvalidTree)
 }
 
 #[cfg(test)]
@@ -294,8 +274,7 @@ mod tests {
         let mut writer = TreeWriter::new(&mut buffer);
         let _ = writer.write_tree(&tree)?;
 
-        let mut reader = TreeReader::new(&buffer[..]);
-        let parsed_tree = reader.read_tree().ok_or("failed")?;
+        let parsed_tree = read_tree_from_buffer(&buffer).ok_or("failed")?;
         assert_eq!(parsed_tree, tree);
         Ok(())
     }
@@ -303,12 +282,10 @@ mod tests {
     #[test]
     fn read_returns_error_on_invalid_data() -> testing::Result<()> {
         let data = b"40000 dir\0abcdef";
-        let mut reader = TreeReader::new(&data[..]);
-        assert!(reader.read_tree().is_none());
+        assert!(read_tree_from_buffer(data).is_none());
 
         let data = b"40000 dir\0\x00\x68\x5f\x1c\x06\x8f\xc3\x32\x30\x76\x91\x78\xcf\xa3\xd3\xb7\x1f\x8d\x99\x4b100644";
-        let mut reader = TreeReader::new(&data[..]);
-        assert!(reader.read_tree().is_none());
+        assert!(read_tree_from_buffer(data).is_none());
         Ok(())
     }
 

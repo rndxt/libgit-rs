@@ -19,6 +19,10 @@ impl<'a> BinaryReader<'a> {
         Self { data }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn skip_prefix(&mut self, prefix: &[u8]) -> Option<()> {
         self.data = self.data.strip_prefix(prefix)?;
         Some(())
