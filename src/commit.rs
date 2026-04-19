@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use crate::binary::BinaryReader;
 use crate::index;
 use crate::object_db;
 use crate::object_id::ObjectId;
@@ -10,10 +11,10 @@ use crate::tree::create_trees_from_index;
 
 pub struct Commit {
     pub tree_id: ObjectId,
+    pub parents: Vec<ObjectId>,
     pub author: Signature,
     pub committer: Signature,
     pub message: String,
-    pub parents: Vec<ObjectId>,
 }
 
 impl Commit {
@@ -71,7 +72,7 @@ impl<W: Write> CommitWriter<W> {
         Self { dest }
     }
 
-    fn write_commit(&mut self, commit: &Commit) -> io::Result<()> {
+    pub fn write_commit(&mut self, commit: &Commit) -> io::Result<()> {
         self.write_commit_ext(
             &commit.tree_id,
             &commit.parents,
@@ -98,6 +99,113 @@ impl<W: Write> CommitWriter<W> {
         writeln!(self.dest, "committer {}", committer)?;
         writeln!(self.dest)?;
         writeln!(self.dest, "{}", message)?;
+        Ok(())
+    }
+}
+
+pub fn read_commit_from_buffer(buffer: &[u8]) -> Option<Commit> {
+    let mut reader = BinaryReader::new(buffer);
+    reader.skip_prefix(b"tree ")?;
+    let tree_id = reader
+        .split_until_inclusive(b'\n')
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .and_then(|str| ObjectId::from_str(str).ok())?;
+
+    let mut parents = Vec::new();
+    while reader.skip_prefix(b"parent ").is_some() {
+        let parent_id = reader
+            .split_until_inclusive(b'\n')
+            .and_then(|bytes| str::from_utf8(bytes).ok())
+            .and_then(|str| ObjectId::from_str(str).ok())?;
+        parents.push(parent_id);
+    }
+
+    reader.skip_prefix(b"author ")?;
+    let author = reader
+        .split_until_inclusive(b'\n')
+        .and_then(Signature::try_from_bytes)?;
+    reader.skip_prefix(b"committer ")?;
+    let committer = reader
+        .split_until_inclusive(b'\n')
+        .and_then(Signature::try_from_bytes)?;
+
+    reader.skip_byte(b'\n')?;
+    let message = reader
+        .split_until_inclusive(b'\n')
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .map(str::to_string)?;
+
+    let commit = Commit {
+        tree_id,
+        parents,
+        author,
+        committer,
+        message,
+    };
+    Some(commit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing;
+
+    use crate::time::Time;
+
+    #[test]
+    fn write_commit() -> testing::Result<()> {
+        let tree_id = ObjectId::from_str("85df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap();
+        let parents = [
+            ObjectId::from_str("15df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap(),
+            ObjectId::from_str("25df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap(),
+        ];
+        let author =
+            Signature::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
+            let committer =
+            Signature::build("committer", "commiter@email", Time::new(1771253662, 10800)).unwrap();
+        let message = "Commit message";
+
+        let mut buffer = Vec::new();
+        let mut writer = CommitWriter::new(&mut buffer);
+        writer.write_commit_ext(&tree_id, &parents, &author, &committer, &message)?;
+
+        let expected_data = b"tree 85df50785d62d3b05ab03d9cbf7e4a0b49449730\nparent 15df50785d62d3b05ab03d9cbf7e4a0b49449730\nparent 25df50785d62d3b05ab03d9cbf7e4a0b49449730\nauthor author <author@email> 1771253662 +0300\ncommitter committer <commiter@email> 1771253662 +0300\n\nCommit message\n";
+        assert_eq!(expected_data, &buffer[..]);
+        Ok(())
+    }
+
+    #[test]
+    fn read_commit() -> testing::Result<()> {
+        let data = b"tree 85df50785d62d3b05ab03d9cbf7e4a0b49449730\nparent 15df50785d62d3b05ab03d9cbf7e4a0b49449730\nparent 25df50785d62d3b05ab03d9cbf7e4a0b49449730\nauthor author <author@email> 1771253662 +0300\ncommitter committer <commiter@email> 1771253662 +0300\n\nmessage\n";
+        let commit = read_commit_from_buffer(data).unwrap();
+
+        assert_eq!(
+            commit.tree_id,
+            ObjectId::from_str("85df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap()
+        );
+
+        assert_eq!(commit.parents.len(), 2);
+        assert_eq!(commit.parents[0], ObjectId::from_str("15df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap());
+        assert_eq!(commit.parents[1], ObjectId::from_str("25df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap());
+        assert_eq!(commit.author,
+              Signature {
+            name: String::from("author"),
+            email: String::from("author@email"),
+            time: Time {
+                unix_time: 1771253662,
+                offset: 10800
+            },
+        });
+        assert_eq!(commit.committer,
+              Signature {
+            name: String::from("committer"),
+            email: String::from("commiter@email"),
+            time: Time {
+                unix_time: 1771253662,
+                offset: 10800
+            },
+        });
+        assert_eq!(commit.message, "message");
         Ok(())
     }
 }

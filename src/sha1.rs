@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{fmt, io::Write};
 
 use sha1::{Digest, Sha1 as Sha1Internal};
 
@@ -41,16 +41,19 @@ impl Sha1 {
             .and_then(|v| Sha1::from_bytes(&v))
     }
 
-    pub fn to_string(&self) -> String {
-        base16ct::lower::encode_string(&self.0)
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
     pub fn as_mut(&mut self) -> &mut [u8] {
         &mut self.0
+    }
+}
+
+impl fmt::Display for Sha1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = base16ct::lower::encode_string(&self.0);
+        f.write_str(&str)
     }
 }
 

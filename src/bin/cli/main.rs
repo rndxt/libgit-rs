@@ -5,16 +5,18 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use git_rs::commit::create_commit_from_index;
+use git_rs::commit::{create_commit_from_index, read_commit_from_buffer};
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
 use git_rs::object_db::hash_file;
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
-use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name};
+use git_rs::tag::{
+    Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name, read_tag_from_buffer,
+};
 use git_rs::time::Time;
-use git_rs::tree::{TreeWalker, create_trees_from_index};
+use git_rs::tree::{TreeWalker, create_trees_from_index, read_tree_from_buffer};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -89,11 +91,15 @@ enum Command {
     LookupTag {
         str: String,
     },
+
+    PrintObject {
+        id: String,
+    },
 }
 
 fn init(path: &Path) -> Result<()> {
     let options = RepositoryInitOptions {
-        default_branch: "master".to_string(),
+        default_branch: String::from("master"),
     };
 
     let _repo = Repository::create_new(path, &options)?;
@@ -108,13 +114,13 @@ fn store_file_to_odb(repo: &Path, path: &Path) -> Result<()> {
 
     let db = repo.object_db();
     let id = db.write_file(&file, &stat, ObjectType::Blob)?;
-    println!("{}", id.to_string());
+    println!("{}", id);
     Ok(())
 }
 
 fn get_object_id(path: &Path) -> Result<()> {
     let id = hash_file(path, ObjectType::Blob)?;
-    println!("{}", id.to_string());
+    println!("{}", id);
     Ok(())
 }
 
@@ -125,7 +131,7 @@ fn parse_index(path: &Path) -> Result<()> {
         println!(
             "{:#o} {} {}",
             e.mode,
-            e.id.to_string(),
+            e.id,
             String::from_utf8(e.path.clone()).unwrap(),
         );
     });
@@ -138,7 +144,7 @@ fn index_to_tree(repo: &Path) -> Result<()> {
     let odb = repo.object_db();
     let index = repo.read_index()?;
     let id = create_trees_from_index(&odb, &index)?;
-    println!("{}", id.to_string());
+    println!("{}", id);
     Ok(())
 }
 
@@ -154,7 +160,7 @@ fn index_to_commit(repo: &Path) -> Result<()> {
     let repo = Repository::open(repo)?;
 
     let author = Signature::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
-    let commiter =
+    let committer =
         Signature::build("committer", "commiter@email", Time::new(1771253662, 10810)).unwrap();
     let message = "Commit Message";
 
@@ -165,11 +171,11 @@ fn index_to_commit(repo: &Path) -> Result<()> {
     let commit_id = create_commit_from_index(
         &repo,
         AuthorInfo(author),
-        CommitterInfo(commiter),
+        CommitterInfo(committer),
         message,
         parents,
     )?;
-    println!("{}", commit_id.to_string());
+    println!("{}", commit_id);
     Ok(())
 }
 
@@ -235,10 +241,11 @@ fn lookup_tag(repo: &Path, str: String) -> Result<()> {
     println!(
         "point-to: {} {}",
         tag.object_type,
-        tag.object_id.to_string()
+        tag.object_id
     );
     Ok(())
 }
+
 fn create_tag(repo: &Path, id: String, name: String, message: String) -> Result<()> {
     let repo = Repository::open(repo)?;
     let id = ObjectId::from_str(&id)?;
@@ -253,7 +260,60 @@ fn create_tag(repo: &Path, id: String, name: String, message: String) -> Result<
     };
 
     let tag_id = create_annotated_tag(&repo, &tag)?;
-    println!("{}", tag_id.to_string());
+    println!("{}", tag_id);
+    Ok(())
+}
+
+fn print_object(repo: &Path, id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let id = ObjectId::from_str(&id)?;
+    let odb = repo.object_db();
+    let (object_type, data) = odb.load_object(id)?;
+    match object_type {
+        ObjectType::Blob => {
+            println!("blob");
+            if let Ok(str) = str::from_utf8(&data) {
+                print!("{}", str);
+            } else {
+                println!("{:?}", data);
+            }
+        },
+        ObjectType::Tree => {
+            let tree = read_tree_from_buffer(&data).ok_or("invalid tree")?;
+            println!("tree");
+            for entry in tree.entries {
+                println!(
+                    "{:#08o} {} {}",
+                    entry.mode,
+                    entry.id,
+                    String::from_utf8(entry.filename.clone()).unwrap(),
+                )
+            }
+        },
+        ObjectType::Commit => {
+            let commit = read_commit_from_buffer(&data).ok_or("imvalid commit")?;
+            println!("commit");
+            println!("tree: {}", commit.tree_id);
+            for parent in commit.parents {
+                println!("parent: {}", parent);
+            }
+
+            println!("author: {}", commit.author);
+            println!("committer: {}", commit.committer);
+            println!("message: {}", commit.message);
+        },
+        ObjectType::Tag => {
+            let tag = read_tag_from_buffer(&data).ok_or("invalid tag")?;
+            println!("name: {}", tag.name);
+            println!("tagger: {}", tag.tagger);
+            println!("message: {}", tag.message);
+            println!(
+                "point-to: {} {}",
+                tag.object_type,
+                tag.object_id
+            );
+        },
+    };
     Ok(())
 }
 
@@ -281,6 +341,7 @@ fn run() -> Result<()> {
         Command::WalkTree { id } => walk_tree(&current_dir, id),
         Command::CreateTag { id, name, message } => create_tag(&current_dir, id, name, message),
         Command::LookupTag { str } => lookup_tag(&current_dir, str),
+        Command::PrintObject { id } => print_object(&current_dir, id),
     }
 }
 

@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub use crate::sha1::Error;
 use crate::sha1::{SHA1_SIZE_IN_BYTES, Sha1};
 
@@ -29,12 +31,14 @@ impl ObjectId {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        self.hash.to_string()
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         self.hash.as_bytes()
+    }
+}
+
+impl fmt::Display for ObjectId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.hash)
     }
 }
 
