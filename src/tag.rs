@@ -57,8 +57,7 @@ pub fn lookup_tag_by_id(repo: &Repository, id: ObjectId) -> Result<Tag, Error> {
         return Err(Error::NotTag);
     }
 
-    let mut reader = TagReader::new(&data[..]);
-    reader.read_tag().ok_or(Error::InvalidTag)
+    read_tag_from_buffer(&data).ok_or(Error::InvalidTag)
 }
 
 pub fn lookup_tag_by_name(repo: &Repository, name: &str) -> Result<Tag, Error> {
@@ -106,54 +105,44 @@ impl<W: Write> TagWriter<W> {
     }
 }
 
-pub struct TagReader<'a> {
-    data: &'a [u8],
-}
+pub fn read_tag_from_buffer(buffer: &[u8]) -> Option<Tag> {
+    let mut reader = BinaryReader::new(buffer);
+    reader.skip_prefix(b"object ")?;
+    let object_id = reader
+        .split_until_inclusive(b'\n')
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .and_then(|str| ObjectId::from_str(str).ok())?;
 
-impl<'a> TagReader<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data }
-    }
+    reader.skip_prefix(b"type ")?;
+    let object_type = reader
+        .split_until_inclusive(b'\n')
+        .and_then(ObjectType::from)?;
 
-    fn read_tag(&mut self) -> Option<Tag> {
-        let mut reader = BinaryReader::new(self.data);
-        reader.skip_prefix(b"object ")?;
-        let object_id = reader
-            .split_until_inclusive(b'\n')
-            .and_then(|bytes| str::from_utf8(bytes).ok())
-            .and_then(|str| ObjectId::from_str(str).ok())?;
+    reader.skip_prefix(b"tag ")?;
+    let name = reader
+        .split_until_inclusive(b'\n')
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .map(str::to_string)?;
 
-        reader.skip_prefix(b"type ")?;
-        let object_type = reader
-            .split_until_inclusive(b'\n')
-            .and_then(ObjectType::from)?;
+    reader.skip_prefix(b"tagger ")?;
+    let tagger = reader
+        .split_until_inclusive(b'\n')
+        .and_then(Signature::try_from_bytes)?;
 
-        reader.skip_prefix(b"tag ")?;
-        let name = reader
-            .split_until_inclusive(b'\n')
-            .and_then(|bytes| str::from_utf8(bytes).ok())
-            .map(str::to_string)?;
+    reader.skip_byte(b'\n')?;
+    let message = reader
+        .split_until_inclusive(b'\n')
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .map(str::to_string)?;
 
-        reader.skip_prefix(b"tagger ")?;
-        let tagger = reader
-            .split_until_inclusive(b'\n')
-            .and_then(Signature::try_from_bytes)?;
-
-        reader.skip_byte(b'\n')?;
-        let message = reader
-            .split_until_inclusive(b'\n')
-            .and_then(|bytes| str::from_utf8(bytes).ok())
-            .map(str::to_string)?;
-
-        let tag = Tag {
-            object_id,
-            object_type,
-            tagger,
-            name,
-            message,
-        };
-        Some(tag)
-    }
+    let tag = Tag {
+        object_id,
+        object_type,
+        tagger,
+        name,
+        message,
+    };
+    Some(tag)
 }
 
 #[cfg(test)]
@@ -184,9 +173,7 @@ mod tests {
     #[test]
     fn read_tag() -> testing::Result<()> {
         let data = b"object 85df50785d62d3b05ab03d9cbf7e4a0b49449730\ntype commit\ntag tag_name\ntagger author <author@email> 1771253662 +0300\n\nmessage\n";
-
-        let mut reader = TagReader::new(&data[..]);
-        let tag = reader.read_tag().unwrap();
+        let tag = read_tag_from_buffer(data).unwrap();
 
         assert_eq!(
             tag.object_id,
