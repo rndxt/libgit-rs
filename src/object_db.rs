@@ -6,35 +6,57 @@ use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
+use crate::blob::Blob;
+use crate::commit::{Commit, read_commit_from_buffer};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 use crate::sha1::Sha1Hasher;
+use crate::tag::{Tag, read_tag_from_buffer};
+use crate::tree::{Tree, read_tree_from_buffer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("cannot create tmp file: {0}")]
-    CreateTmpFileFailed(io::Error),
+    #[error("cannot create file: {0}")]
+    CannotCreateFile(io::Error),
 
-    #[error("cannot remove tmp file: {0}")]
-    RemoveTmpFile(io::Error),
+    #[error("cannot open file: {0}")]
+    CannotOpenFile(io::Error),
 
-    #[error("cannot rename tmp file to {0}: {1}")]
-    RenameFile(PathBuf, io::Error),
-
-    #[error("cannot create dir: {0}")]
-    CreateDirFailed(io::Error),
+    #[error("cannot read from file: {0}")]
+    ReadFileFailed(io::Error),
 
     #[error("cannot write to file: {0}")]
     WriteToFileFailed(io::Error),
 
-    #[error("cannot load object: {0}")]
-    CannotLoadObject(io::Error),
+    #[error("cannot remove file: {0}")]
+    RemoveFileFailed(io::Error),
+
+    #[error("cannot rename file to {0}: {1}")]
+    RenameFile(PathBuf, io::Error),
+
+    #[error("cannot create dir: {0}")]
+    CreateDirFailed(io::Error),
 
     #[error("hash mismatch")]
     HashMismatch,
 
     #[error("object is corrupted")]
     CorruptedObject,
+
+    #[error("invalid tree")]
+    InvalidTree,
+
+    #[error("invalid commit")]
+    InvalidCommit,
+
+    #[error("invalid tag")]
+    InvalidTag,
+
+    #[error("specified object is {actual}, not {expected}")]
+    TypeMismatch {
+        expected: ObjectType,
+        actual: ObjectType,
+    },
 }
 
 pub fn hash_buffer(buffer: &[u8], object_type: ObjectType) -> ObjectId {
@@ -73,6 +95,25 @@ pub fn hash_file<P: AsRef<Path>>(path: P, object_type: ObjectType) -> io::Result
     Ok(id)
 }
 
+#[derive(Debug)]
+pub enum Object {
+    Blob(Blob),
+    Tree(Tree),
+    Commit(Commit),
+    Tag(Tag),
+}
+
+impl Object {
+    pub fn object_type(&self) -> ObjectType {
+        match self {
+            Object::Blob(_) => ObjectType::Blob,
+            Object::Tree(_) => ObjectType::Tree,
+            Object::Commit(_) => ObjectType::Commit,
+            Object::Tag(_) => ObjectType::Tag,
+        }
+    }
+}
+
 pub struct ObjectDB {
     objects_dir: PathBuf,
 }
@@ -108,7 +149,7 @@ impl ObjectDB {
         object_type: ObjectType,
     ) -> Result<ObjectId, Error> {
         let path_tmp = self.objects_dir().join("tmp");
-        let tmp_file = File::create(&path_tmp).map_err(Error::CreateTmpFileFailed)?;
+        let tmp_file = File::create(&path_tmp).map_err(Error::CannotCreateFile)?;
 
         let id = ObjectWriter::new(tmp_file)
             .write_object(data, size, object_type)
@@ -126,22 +167,89 @@ impl ObjectDB {
             return Err(Error::RenameFile(odb_path, e));
         }
 
-        fs::remove_file(path_tmp).map_err(Error::RemoveTmpFile)?;
+        fs::remove_file(path_tmp).map_err(Error::RemoveFileFailed)?;
         Ok(id)
     }
 
-    pub fn load_object(&self, id: ObjectId) -> Result<(ObjectType, Vec<u8>), Error> {
+    pub fn read_blob(&self, id: ObjectId) -> Result<Blob, Error> {
+        let object = self.read_object(id)?;
+        match object {
+            Object::Blob(blob) => Ok(blob),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Blob,
+                actual: object.object_type(),
+            }),
+        }
+    }
+
+    pub fn read_tree(&self, id: ObjectId) -> Result<Tree, Error> {
+        let object = self.read_object(id)?;
+        match object {
+            Object::Tree(tree) => Ok(tree),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Tree,
+                actual: object.object_type(),
+            }),
+        }
+    }
+
+    pub fn read_commit(&self, id: ObjectId) -> Result<Commit, Error> {
+        let object = self.read_object(id)?;
+        match object {
+            Object::Commit(commit) => Ok(commit),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Commit,
+                actual: object.object_type(),
+            }),
+        }
+    }
+
+    pub fn read_tag(&self, id: ObjectId) -> Result<Tag, Error> {
+        let object = self.read_object(id)?;
+        match object {
+            Object::Tag(tag) => Ok(tag),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Tag,
+                actual: object.object_type(),
+            }),
+        }
+    }
+
+    pub fn read_object(&self, id: ObjectId) -> Result<Object, Error> {
+        let (object_type, bytes) = self.load_raw(id)?;
+        let object = match object_type {
+            ObjectType::Blob => {
+                let blob = Blob::new(bytes);
+                Object::Blob(blob)
+            },
+            ObjectType::Tree => {
+                let tree = read_tree_from_buffer(&bytes).ok_or(Error::InvalidTree)?;
+                Object::Tree(tree)
+            },
+            ObjectType::Commit => {
+                let commit = read_commit_from_buffer(&bytes).ok_or(Error::InvalidCommit)?;
+                Object::Commit(commit)
+            },
+            ObjectType::Tag => {
+                let tag = read_tag_from_buffer(&bytes).ok_or(Error::InvalidTag)?;
+                Object::Tag(tag)
+            },
+        };
+        Ok(object)
+    }
+
+    pub fn load_raw(&self, id: ObjectId) -> Result<(ObjectType, Vec<u8>), Error> {
         let hex = id.to_string();
         let mut path = PathBuf::from(self.objects_dir());
         path.push(&hex[..2]);
         path.push(&hex[2..]);
 
-        let file = File::open(path).map_err(Error::CannotLoadObject)?;
+        let file = File::open(path).map_err(Error::CannotOpenFile)?;
         let mut decoder = ZlibDecoder::new(file);
         let mut data = Vec::new();
         decoder
             .read_to_end(&mut data)
-            .map_err(Error::CannotLoadObject)?;
+            .map_err(Error::ReadFileFailed)?;
 
         let mut hasher = Sha1Hasher::new();
         hasher.update(&data);

@@ -8,6 +8,7 @@ use crate::refs;
 use crate::repo::Repository;
 use crate::signature::Signature;
 
+#[derive(Debug)]
 pub struct Tag {
     pub object_id: ObjectId,
     pub object_type: ObjectType,
@@ -27,12 +28,6 @@ pub enum Error {
     #[error("cannot store tag object: {0}")]
     OdbWriteFailed(#[from] object_db::Error),
 
-    #[error("not a tag object")]
-    NotTag,
-
-    #[error("invalid tag")]
-    InvalidTag,
-
     #[error("cannot read tag object: {0}")]
     OdbReadFailed(object_db::Error),
 }
@@ -50,7 +45,11 @@ pub fn create_annotated_tag(repo: &Repository, tag: &Tag) -> Result<ObjectId, Er
     Ok(tag_id)
 }
 
-pub fn create_light_tag(repo: &Repository, tag_name: &str, target_id: ObjectId) -> Result<(), Error> {
+pub fn create_light_tag(
+    repo: &Repository,
+    tag_name: &str,
+    target_id: ObjectId,
+) -> Result<(), Error> {
     let refs = repo.refs();
     let _ = refs.create_tag_ref(tag_name, target_id)?;
     Ok(())
@@ -58,20 +57,17 @@ pub fn create_light_tag(repo: &Repository, tag_name: &str, target_id: ObjectId) 
 
 pub fn lookup_tag_by_id(repo: &Repository, id: ObjectId) -> Result<Tag, Error> {
     let odb = repo.object_db();
-    let (object_type, data) = odb.load_object(id).map_err(Error::OdbReadFailed)?;
-    if object_type != ObjectType::Tag {
-        return Err(Error::NotTag);
-    }
-
-    read_tag_from_buffer(&data).ok_or(Error::InvalidTag)
+    odb.read_tag(id).map_err(Error::OdbReadFailed)
 }
 
 pub fn lookup_tag_by_name(repo: &Repository, name: &str) -> Result<Tag, Error> {
-    let refs = repo.refs();
-    let tag_ref = refs
+    let tag_id = repo
+        .refs()
         .lookup_tag_ref(&name)
-        .map_err(Error::LookupTagRefFailed)?;
-    lookup_tag_by_id(repo, tag_ref.target)
+        .map_err(Error::LookupTagRefFailed)?
+        .target;
+
+    lookup_tag_by_id(repo, tag_id)
 }
 
 struct TagWriter<W: Write> {

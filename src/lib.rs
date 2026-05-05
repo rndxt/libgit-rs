@@ -1,3 +1,6 @@
+pub mod blob;
+pub mod checkout;
+pub mod diff;
 pub mod commit;
 pub mod index;
 pub mod object_db;
@@ -14,7 +17,7 @@ mod binary;
 mod sha1;
 
 #[derive(Debug, Clone, Copy)]
-enum FileMode {
+pub enum FileMode {
     Blob,
     Executable,
     Tree,

@@ -36,6 +36,11 @@ pub struct Reference {
     pub target: ObjectId,
 }
 
+pub enum HeadState {
+    Detached(ObjectId),
+    Normal(Reference),
+}
+
 pub struct Refs {
     git_dir: PathBuf,
 }
@@ -47,20 +52,20 @@ impl Refs {
         }
     }
 
-    pub fn get_refs_dir(&self) -> PathBuf {
+    pub fn refs_dir(&self) -> PathBuf {
         self.git_dir.join("refs")
     }
 
-    pub fn get_branch_dir(&self) -> PathBuf {
+    pub fn branch_dir(&self) -> PathBuf {
         self.git_dir.join("refs/heads")
     }
 
-    pub fn get_tags_dir(&self) -> PathBuf {
+    pub fn tags_dir(&self) -> PathBuf {
         self.git_dir.join("refs/tags")
     }
 
     pub fn create_tag_ref(&self, tag_name: &str, target_id: ObjectId) -> Result<Reference, Error> {
-        self.create_ref(&tag_name, target_id, &&self.get_tags_dir())
+        self.create_ref(&tag_name, target_id, &&self.tags_dir())
     }
 
     pub fn create_branch(
@@ -68,11 +73,11 @@ impl Refs {
         branch_name: &str,
         target_commit: ObjectId,
     ) -> Result<Reference, Error> {
-        self.create_ref(&branch_name, target_commit, &self.get_branch_dir())
+        self.create_ref(&branch_name, target_commit, &self.branch_dir())
     }
 
     pub fn update_branch(&self, branch_name: String, target_commit: ObjectId) -> Result<(), Error> {
-        let branch_path = self.get_branch_dir().join(&branch_name);
+        let branch_path = self.branch_dir().join(&branch_name);
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -84,42 +89,49 @@ impl Refs {
     }
 
     pub fn lookup_branch(&self, name: &str) -> Result<Reference, Error> {
-        let branch_path = self.get_branch_dir().join(name);
+        let branch_path = self.branch_dir().join(name);
         self.lookup_ref(name, &branch_path)
     }
 
     pub fn lookup_tag_ref(&self, name: &str) -> Result<Reference, Error> {
-        let tag_path = self.get_tags_dir().join(name);
+        let tag_path = self.tags_dir().join(name);
         self.lookup_ref(name, &tag_path)
     }
 
-    pub fn resolve_symbolic_ref(&self, ref_name: &str) -> Result<Reference, Error> {
-        let mut ref_file =
-            File::open(self.git_dir.join(&ref_name)).map_err(Error::CannotOpenFile)?;
+    pub fn resolve_head(&self) -> Result<HeadState, Error> {
+        let head_path = self.git_dir.join("HEAD");
+        let mut head = File::open(head_path).map_err(Error::CannotOpenFile)?;
+
         let mut buffer = Vec::new();
-        ref_file
-            .read_to_end(&mut buffer)
+        head.read_to_end(&mut buffer)
             .map_err(Error::CannotReadFromFile)?;
 
         let prefix = b"ref: refs/heads/";
-        if !buffer.starts_with(prefix) {
+        if buffer.starts_with(prefix) {
+            let (_, rest) = buffer.split_at(prefix.len());
+            let branch_name = parse_ref_name(rest)?;
+            let branch = self.lookup_branch(&branch_name)?;
+            Ok(HeadState::Normal(branch))
+        } else if let Ok(id) = ObjectId::from_ascii_hex(&buffer) {
+            return Ok(HeadState::Detached(id));
+        } else {
             return Err(Error::InvalidSymbolicRef);
         }
+    }
 
-        let (_, rest) = buffer.split_at(prefix.len());
-        let rest = rest.trim_ascii_end();
-        if rest.is_empty() {
-            return Err(Error::InvalidSymbolicRef);
-        }
-
-        if let Err(idx) = validate_ref_name(rest) {
+    pub fn set_head(&self, branch: &str) -> Result<(), Error> {
+        if let Err(idx) = validate_ref_name(branch.as_bytes()) {
             return Err(Error::InvalidRefName(idx));
         }
 
-        match String::from_utf8(rest.to_vec()) {
-            Ok(s) => self.lookup_branch(&s),
-            Err(e) => Err(Error::InvalidRefName(e.utf8_error().valid_up_to())),
-        }
+        let head_path = self.git_dir.join("HEAD");
+        let mut head = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(head_path)
+            .map_err(Error::CannotOpenFile)?;
+        write!(head, "ref: refs/heads/{}", branch).map_err(Error::CannotWriteToFile)?;
+        Ok(())
     }
 }
 
@@ -151,6 +163,20 @@ impl Refs {
         };
         Ok(reference)
     }
+}
+
+fn parse_ref_name(buffer: &[u8]) -> Result<String, Error> {
+    let buffer = buffer.trim_ascii_end();
+    if buffer.is_empty() {
+        return Err(Error::InvalidSymbolicRef);
+    }
+
+    if let Err(idx) = validate_ref_name(buffer) {
+        return Err(Error::InvalidRefName(idx));
+    }
+
+    String::from_utf8(buffer.to_vec())
+        .map_err(|e| Error::InvalidRefName(e.utf8_error().valid_up_to()))
 }
 
 // According to git-check-ref-format

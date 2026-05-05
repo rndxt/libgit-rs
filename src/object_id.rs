@@ -17,6 +17,10 @@ impl ObjectId {
         Sha1::from_str(s).map(|hash| Self { hash })
     }
 
+    pub fn from_ascii_hex(hex: &[u8]) -> Result<ObjectId, Error> {
+        Sha1::from_ascii_hex(hex).map(|hash| Self { hash })
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<ObjectId, Error> {
         Sha1::from_bytes(bytes).map(|hash| Self { hash })
     }

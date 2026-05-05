@@ -5,9 +5,10 @@ use std::path::PathBuf;
 use crate::FileMode;
 use crate::binary::BinaryReader;
 use crate::index::Index;
-use crate::object_db::{self, ObjectDB};
+use crate::object_db::{self, Object, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
+use crate::refs::{self, HeadState};
 use crate::repo::Repository;
 use crate::sha1::SHA1_SIZE_IN_BYTES;
 
@@ -140,14 +141,14 @@ impl<W: Write> TreeWriter<W> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("not a tree object")]
-    NotTree,
+    #[error("cannot read tree: {0}")]
+    OdbReadFailed(object_db::Error),
 
-    #[error("invalid tree")]
-    InvalidTree,
+    #[error("lookup ref failed: {0}")]
+    LookupRefFailed(refs::Error),
 
-    #[error("cannot load object: {0}")]
-    CannotLoadObject(object_db::Error),
+    #[error("specified treeish is not commit, tag, tree, branch or HEAD")]
+    InvalidTreeish,
 
     #[error("Empty directories hierarchy")]
     EmptyDirs,
@@ -164,6 +165,38 @@ pub struct TreeWalker<'a> {
     stack: LinkedList<StackNode>,
 }
 
+pub struct WalkEntry<'a> {
+    tree_entry: &'a TreeEntry,
+    dir_path: &'a [u8],
+}
+
+impl<'a> WalkEntry<'a> {
+    pub fn new(tree_entry: &'a TreeEntry, dir_path: &'a [u8]) -> WalkEntry<'a> {
+        WalkEntry {
+            tree_entry,
+            dir_path,
+        }
+    }
+
+    pub fn make_fullpath(&self) -> Vec<u8> {
+        let mut path = Vec::new();
+        if !self.dir_path.is_empty() {
+            path.extend_from_slice(self.dir_path);
+            path.push(b'/');
+        }
+        path.extend_from_slice(&self.tree_entry.filename);
+        path
+    }
+
+    pub fn dir_path(&self) -> &[u8] {
+        self.dir_path
+    }
+
+    pub fn object_id(&self) -> ObjectId {
+        self.tree_entry.id
+    }
+}
+
 impl<'a> TreeWalker<'a> {
     fn advance_to_next_non_tree(&mut self) -> Result<(), Error> {
         loop {
@@ -174,7 +207,12 @@ impl<'a> TreeWalker<'a> {
             }
 
             // TODO: check cycles: A -> B, B -> A
-            let tree = read_tree_from_odb(self.repo, entry.id)?;
+            let tree = self
+                .repo
+                .object_db()
+                .read_tree(entry.id)
+                .map_err(Error::OdbReadFailed)?;
+
             if tree.entries.is_empty() {
                 return Err(Error::EmptyDirs);
             }
@@ -189,13 +227,21 @@ impl<'a> TreeWalker<'a> {
 }
 
 impl<'a> TreeWalker<'a> {
-    pub fn new(id: ObjectId, repo: &'a Repository) -> Result<Self, Error> {
+    pub fn from_id(id: ObjectId, repo: &'a Repository) -> Result<Self, Error> {
+        let tree = repo
+            .object_db()
+            .read_tree(id)
+            .map_err(Error::OdbReadFailed)?;
+        Self::from_tree(repo, tree)
+    }
+
+    pub fn from_tree(repo: &'a Repository, tree: Tree) -> Result<Self, Error> {
         let mut walker = Self {
             repo,
             path: PathBuf::new(),
             stack: LinkedList::new(),
         };
-        let tree = read_tree_from_odb(repo, id)?;
+
         if !tree.entries.is_empty() {
             walker.stack.push_back(StackNode {
                 entries: tree.entries,
@@ -206,7 +252,7 @@ impl<'a> TreeWalker<'a> {
         Ok(walker)
     }
 
-    pub fn current(&self) -> Option<(&TreeEntry, &[u8])> {
+    pub fn current(&self) -> Option<WalkEntry<'_>> {
         let top = self.stack.back()?;
         debug_assert!(
             top.idx < top.entries.len(),
@@ -217,7 +263,7 @@ impl<'a> TreeWalker<'a> {
         let entry = &top.entries[top.idx];
         debug_assert_ne!(entry.mode, FileMode::Tree.into());
         let path = &self.path.as_os_str().as_encoded_bytes();
-        Some((entry, path))
+        Some(WalkEntry::new(entry, path))
     }
 
     pub fn advance(&mut self) -> Result<(), Error> {
@@ -239,14 +285,60 @@ impl<'a> TreeWalker<'a> {
     }
 }
 
-fn read_tree_from_odb(repo: &Repository, id: ObjectId) -> Result<Tree, Error> {
-    let odb = repo.object_db();
-    let (object_type, data) = odb.load_object(id).map_err(Error::CannotLoadObject)?;
-    if object_type != ObjectType::Tree {
-        return Err(Error::NotTree);
+pub fn decay_to_tree(repo: &Repository, treeish: &str) -> Result<(Tree, ObjectId), Error> {
+    if treeish == "HEAD" {
+        let refs = repo.refs();
+        let head = refs.resolve_head().map_err(Error::LookupRefFailed)?;
+        let commit_id = match head {
+            HeadState::Detached(id) => id,
+            HeadState::Normal(branch) => branch.target,
+        };
+
+        let odb = repo.object_db();
+        let commit = odb.read_commit(commit_id).map_err(Error::OdbReadFailed)?;
+        let tree = odb
+            .read_tree(commit.tree_id)
+            .map_err(Error::OdbReadFailed)?;
+        return Ok((tree, commit.tree_id));
     }
 
-    read_tree_from_buffer(&data).ok_or(Error::InvalidTree)
+    if let Ok(id) = ObjectId::from_str(treeish) {
+        let odb = repo.object_db();
+        let object = odb.read_object(id).map_err(Error::OdbReadFailed)?;
+        match object {
+            Object::Tree(tree) => {
+                return Ok((tree, id));
+            },
+            Object::Commit(commit) => {
+                let tree = odb
+                    .read_tree(commit.tree_id)
+                    .map_err(Error::OdbReadFailed)?;
+                return Ok((tree, commit.tree_id));
+            },
+            Object::Tag(tag) => {
+                let commit = odb
+                    .read_commit(tag.object_id)
+                    .map_err(Error::OdbReadFailed)?;
+                let tree = odb
+                    .read_tree(commit.tree_id)
+                    .map_err(Error::OdbReadFailed)?;
+                return Ok((tree, commit.tree_id));
+            },
+            Object::Blob(_) => {
+                return Err(Error::InvalidTreeish);
+            },
+        }
+    }
+
+    let refs = repo.refs();
+    let branch = refs.lookup_branch(treeish).map_err(Error::LookupRefFailed)?;
+    let commit_id = branch.target;
+    let odb = repo.object_db();
+    let commit = odb.read_commit(commit_id).map_err(Error::OdbReadFailed)?;
+    let tree = odb
+        .read_tree(commit.tree_id)
+        .map_err(Error::OdbReadFailed)?;
+    return Ok((tree, commit.tree_id));
 }
 
 #[cfg(test)]

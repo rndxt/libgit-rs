@@ -1,4 +1,5 @@
-use std::{fmt, io::Write};
+use std::fmt;
+use std::io::Write;
 
 use sha1::{Digest, Sha1 as Sha1Internal};
 
@@ -35,10 +36,22 @@ impl Sha1 {
         Ok(hash)
     }
 
+    pub fn from_ascii_hex(hex: &[u8]) -> Result<Self, Error> {
+        if let (chunks, []) = hex.as_chunks::<2>() {
+            let mut bytes = Vec::new();
+            for chunk in chunks {
+                let str = str::from_utf8(chunk).map_err(|_| Error::InvalidData)?;
+                let byte = u8::from_str_radix(str, 16).map_err(|_| Error::InvalidData)?;
+                bytes.push(byte);
+            }
+            return Self::from_bytes(&bytes);
+        } else {
+            return Err(Error::WrongBufferSize(hex.len()));
+        }
+    }
+
     pub fn from_str(s: &str) -> Result<Self, Error> {
-        base16ct::lower::decode_vec(s.as_bytes())
-            .map_err(|_| Error::InvalidData)
-            .and_then(|v| Sha1::from_bytes(&v))
+        Self::from_ascii_hex(s.as_bytes())
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -52,8 +65,16 @@ impl Sha1 {
 
 impl fmt::Display for Sha1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let str = base16ct::lower::encode_string(&self.0);
-        f.write_str(&str)
+        for byte in self.0 {
+            let byte = byte as u32;
+            write!(
+                f,
+                "{}{}",
+                char::from_digit(byte / 16, 16).unwrap(),
+                char::from_digit(byte % 16, 16).unwrap()
+            )?;
+        }
+        Ok(())
     }
 }
 

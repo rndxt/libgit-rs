@@ -120,7 +120,7 @@ impl Index {
         self.find_by_raw_path(path_raw)
     }
 
-    fn find_by_raw_path(&self, path_raw: &[u8]) -> Result<usize, usize> {
+    pub fn find_by_raw_path(&self, path_raw: &[u8]) -> Result<usize, usize> {
         debug_assert!(self.is_entries_sorted());
         // TODO: stage bit
         self.entries
@@ -143,6 +143,13 @@ impl Index {
         debug_assert!(i < self.count_entries());
         debug_assert!(self.is_entries_sorted());
         self.entries.remove(i);
+    }
+
+    pub fn get_by_raw_path(&self, path: &[u8]) -> Option<&IndexEntry> {
+        match self.find_by_raw_path(path) {
+            Ok(i) => Some(&self.entries[i]),
+            Err(_) => None,
+        }
     }
 
     pub fn get_unchecked(&self, i: usize) -> &IndexEntry {

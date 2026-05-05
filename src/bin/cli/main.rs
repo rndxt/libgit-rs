@@ -5,18 +5,18 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use git_rs::commit::{create_commit_from_index, read_commit_from_buffer};
+use git_rs::checkout::checkout_tree;
+use git_rs::commit::create_commit_from_index;
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
-use git_rs::object_db::hash_file;
+use git_rs::object_db::{Object, hash_file};
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
+use git_rs::refs::HeadState;
 use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
-use git_rs::tag::{
-    Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name, read_tag_from_buffer,
-};
+use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name};
 use git_rs::time::Time;
-use git_rs::tree::{TreeWalker, create_trees_from_index, read_tree_from_buffer};
+use git_rs::tree::{TreeWalker, create_trees_from_index};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -72,11 +72,6 @@ enum Command {
         commit_id: String,
     },
 
-    /// Load Git object from Object Database and print it raw data
-    LoadFromOdb {
-        id: String,
-    },
-
     /// Print content of specified tree object
     WalkTree {
         id: String,
@@ -93,6 +88,10 @@ enum Command {
     },
 
     PrintObject {
+        id: String,
+    },
+
+    Checkout {
         id: String,
     },
 }
@@ -165,17 +164,21 @@ fn index_to_commit(repo: &Path) -> Result<()> {
     let message = "Commit Message";
 
     let refs = repo.refs();
-    let head_branch = refs.resolve_symbolic_ref("HEAD")?;
-    let parents = &[head_branch.target];
-
-    let commit_id = create_commit_from_index(
-        &repo,
-        AuthorInfo(author),
-        CommitterInfo(committer),
-        message,
-        parents,
-    )?;
-    println!("{}", commit_id);
+    match refs.resolve_head()? {
+        HeadState::Detached(_) => {
+            println!("HEAD is detached. Switch to branch and commit changes");
+        },
+        HeadState::Normal(branch) => {
+            let commit_id = create_commit_from_index(
+                &repo,
+                AuthorInfo(author),
+                CommitterInfo(committer),
+                message,
+                &[branch.target],
+            )?;
+            println!("{}", commit_id);
+        },
+    }
     Ok(())
 }
 
@@ -203,26 +206,13 @@ fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
     Ok(())
 }
 
-fn load_from_odb(repo: &Path, id: String) -> Result<()> {
-    let repo = Repository::open(repo)?;
-    let id = ObjectId::from_str(&id)?;
-    let odb = repo.object_db();
-    let (object_type, data) = odb.load_object(id)?;
-
-    println!("{}: {:?}", object_type, data);
-    Ok(())
-}
-
 fn walk_tree(repo: &Path, id: String) -> Result<()> {
     let repo = Repository::open(repo)?;
     let id = ObjectId::from_str(&id)?;
-    let mut walker = TreeWalker::new(id, &repo)?;
-    while let Some((entry, path)) = walker.current() {
-        if !path.is_empty() {
-            print!("{}/", str::from_utf8(path).unwrap());
-        }
-
-        println!("{}", str::from_utf8(&entry.filename).unwrap());
+    let mut walker = TreeWalker::from_id(id, &repo)?;
+    while let Some(entry) = walker.current() {
+        let path = entry.make_fullpath();
+        println!("{}", str::from_utf8(&path).unwrap());
         walker.advance()?;
     }
     Ok(())
@@ -264,18 +254,16 @@ fn print_object(repo: &Path, id: String) -> Result<()> {
     let repo = Repository::open(repo)?;
     let id = ObjectId::from_str(&id)?;
     let odb = repo.object_db();
-    let (object_type, data) = odb.load_object(id)?;
-    match object_type {
-        ObjectType::Blob => {
+    match odb.read_object(id)? {
+        Object::Blob(blob) => {
             println!("blob");
-            if let Ok(str) = str::from_utf8(&data) {
+            if let Ok(str) = str::from_utf8(&blob.data) {
                 print!("{}", str);
             } else {
-                println!("{:?}", data);
+                println!("{:?}", blob.data);
             }
         },
-        ObjectType::Tree => {
-            let tree = read_tree_from_buffer(&data).ok_or("invalid tree")?;
+        Object::Tree(tree) => {
             println!("tree");
             for entry in tree.entries {
                 println!(
@@ -286,8 +274,7 @@ fn print_object(repo: &Path, id: String) -> Result<()> {
                 )
             }
         },
-        ObjectType::Commit => {
-            let commit = read_commit_from_buffer(&data).ok_or("imvalid commit")?;
+        Object::Commit(commit) => {
             println!("commit");
             println!("tree: {}", commit.tree_id);
             for parent in commit.parents {
@@ -298,14 +285,19 @@ fn print_object(repo: &Path, id: String) -> Result<()> {
             println!("committer: {}", commit.committer);
             println!("message: {}", commit.message);
         },
-        ObjectType::Tag => {
-            let tag = read_tag_from_buffer(&data).ok_or("invalid tag")?;
+        Object::Tag(tag) => {
             println!("name: {}", tag.name);
             println!("tagger: {}", tag.tagger);
             println!("message: {}", tag.message);
             println!("point-to: {} {}", tag.object_type, tag.object_id);
         },
     };
+    Ok(())
+}
+
+fn checkout(repo: &Path, id: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    checkout_tree(&repo, &id)?;
     Ok(())
 }
 
@@ -329,11 +321,11 @@ fn run() -> Result<()> {
             branch_name,
             commit_id,
         } => create_branch(&current_dir, branch_name, commit_id),
-        Command::LoadFromOdb { id } => load_from_odb(&current_dir, id),
         Command::WalkTree { id } => walk_tree(&current_dir, id),
         Command::CreateTag { id, name, message } => create_tag(&current_dir, id, name, message),
         Command::LookupTag { str } => lookup_tag(&current_dir, str),
         Command::PrintObject { id } => print_object(&current_dir, id),
+        Command::Checkout { id } => checkout(&current_dir, id),
     }
 }
 

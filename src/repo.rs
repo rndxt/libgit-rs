@@ -11,6 +11,7 @@ pub struct RepositoryInitOptions {
 }
 
 pub struct Repository {
+    root_dir: PathBuf,
     git_dir: PathBuf,
 }
 
@@ -47,13 +48,20 @@ impl Repository {
             .create_head_file(&options.default_branch)?
             .done();
 
-        let repository = Self { git_dir };
+        let repository = Self {
+            root_dir: path.to_path_buf(),
+            git_dir,
+        };
         Ok(repository)
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let git_dir = path.as_ref().join(".git");
-        let repo = Self { git_dir };
+        let path = path.as_ref();
+        let git_dir = path.join(".git");
+        let repo = Self {
+            root_dir: path.to_path_buf(),
+            git_dir,
+        };
         Ok(repo)
     }
 
@@ -73,6 +81,10 @@ impl Repository {
 
     pub fn git_dir(&'_ self) -> &Path {
         self.git_dir.as_path()
+    }
+
+    pub fn root_path(&'_ self) -> &Path {
+        self.root_dir.as_path()
     }
 }
 

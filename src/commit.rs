@@ -9,6 +9,7 @@ use crate::repo::Repository;
 use crate::signature::{AuthorInfo, CommitterInfo, Signature};
 use crate::tree::create_trees_from_index;
 
+#[derive(Debug)]
 pub struct Commit {
     pub tree_id: ObjectId,
     pub parents: Vec<ObjectId>,
