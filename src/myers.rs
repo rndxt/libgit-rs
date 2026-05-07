@@ -1,7 +1,7 @@
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Line(usize, Vec<u8>);
+pub struct Line(pub usize, pub Vec<u8>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -12,9 +12,9 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {
-    action: Action,
-    a: Option<Line>,
-    b: Option<Line>,
+    pub action: Action,
+    pub a: Option<Line>,
+    pub b: Option<Line>,
 }
 
 impl Edit {
@@ -85,19 +85,17 @@ struct Region {
 
 impl Region {
     fn new(left: isize, top: isize, right: isize, bottom: isize) -> Self {
-        debug_assert!(left <= right, "{left} <= {right} is false");
-        debug_assert!(top <= bottom, "{top} <= {bottom} is false");
-        Region {
-            top_left: Point { x: left, y: top },
-            bottom_right: Point {
-                x: right,
-                y: bottom,
-            },
-        }
+        Self::from_points(Point::new(left, top), Point::new(right, bottom))
     }
 
     fn from_points(p1: Point<isize>, p2: Point<isize>) -> Self {
-        Self::new(p1.x, p1.y, p2.x, p2.y)
+        debug_assert!(p1.x <= p2.x, "x1={} x2={}", p1.x, p2.x);
+        debug_assert!(p1.y <= p2.y, "y1={} y2={}", p1.y, p2.y);
+
+        Self {
+            top_left: p1,
+            bottom_right: p2,
+        }
     }
 
     fn width(&self) -> isize {
@@ -156,7 +154,7 @@ impl IndexMut<isize> for Array {
     }
 }
 
-struct Myers<'a> {
+pub struct Myers<'a> {
     a: &'a [u8],
     b: &'a [u8],
 }

@@ -1,5 +1,6 @@
 use std::env;
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -8,6 +9,7 @@ use clap::{Parser, Subcommand};
 use git_rs::checkout::checkout_tree;
 use git_rs::commit::create_commit_from_index;
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
+use git_rs::myers::{Action, Myers};
 use git_rs::object_db::{Object, hash_file};
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
@@ -93,6 +95,11 @@ enum Command {
 
     Checkout {
         id: String,
+    },
+
+    Diff {
+        left: String,
+        right: String,
     },
 }
 
@@ -301,6 +308,40 @@ fn checkout(repo: &Path, id: String) -> Result<()> {
     Ok(())
 }
 
+fn diff(left: String, right: String) -> Result<()> {
+    let mut left = File::open(left)?;
+    let mut a = Vec::new();
+    left.read_to_end(&mut a)?;
+
+    let mut right = File::open(right)?;
+    let mut b = Vec::new();
+    right.read_to_end(&mut b)?;
+
+    let edits = Myers::new(&a, &b).diff();
+    for edit in edits {
+        match edit.action {
+            Action::Nothing => {
+                let a = edit.a.as_ref().unwrap();
+                let b = edit.b.as_ref().unwrap();
+                let str = std::str::from_utf8(&a.1).unwrap();
+                println!("  {} {} {}", a.0, b.0, str);
+            },
+            Action::Add => {
+                let b = edit.b.as_ref().unwrap();
+                let str = std::str::from_utf8(&b.1).unwrap();
+                println!("+   {} {}", b.0, str);
+            },
+            Action::Delete => {
+                let a = edit.a.as_ref().unwrap();
+                let str = std::str::from_utf8(&a.1).unwrap();
+                println!("- {}   {}", a.0, str);
+            },
+        }
+    }
+
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let current_dir = env::current_dir()?;
     let args = Args::parse();
@@ -326,6 +367,7 @@ fn run() -> Result<()> {
         Command::LookupTag { str } => lookup_tag(&current_dir, str),
         Command::PrintObject { id } => print_object(&current_dir, id),
         Command::Checkout { id } => checkout(&current_dir, id),
+        Command::Diff { left, right } => diff(left, right),
     }
 }
 
