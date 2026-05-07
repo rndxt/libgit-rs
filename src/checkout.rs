@@ -43,19 +43,18 @@ pub enum Error {
 }
 
 pub fn checkout_tree(repo: &Repository, treeish: &str) -> Result<(), Error> {
-    let (target_tree, target_id) = decay_to_tree(&repo, treeish).map_err(Error::InvalidTree)?;
-    let (current_tree, current_id) = decay_to_tree(&repo, "HEAD").map_err(Error::InvalidTree)?;
+    let (target_tree, target_id) = decay_to_tree(repo, treeish).map_err(Error::InvalidTree)?;
+    let (current_tree, current_id) = decay_to_tree(repo, "HEAD").map_err(Error::InvalidTree)?;
 
-    if target_id == current_id {
-        return Ok(());
+    if target_id != current_id {
+        let deltas = TreeDiff::new(repo)
+            .compare_trees(current_tree, target_tree)
+            .unwrap();
+
+        apply_changes(repo, &deltas)?;
+        update_index(repo, &deltas)?;
     }
 
-    let deltas = TreeDiff::new(&repo)
-        .compare_trees(current_tree, target_tree)
-        .unwrap();
-
-    apply_changes(repo, &deltas)?;
-    update_index(repo, &deltas)?;
     let refs = repo.refs();
     refs.set_head(treeish).map_err(Error::UpdateHead)?;
     Ok(())
