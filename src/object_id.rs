@@ -13,6 +13,7 @@ impl ObjectId {
         Self { hash: Sha1::null() }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<ObjectId, Error> {
         Sha1::from_str(s).map(|hash| Self { hash })
     }

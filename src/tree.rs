@@ -25,6 +25,7 @@ pub struct Tree {
 }
 
 impl Tree {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -39,7 +40,7 @@ pub fn create_trees_from_index(
     // TODO: check conflicts
     let (_, id) = create_trees_from_index_impl(
         index,
-        &mut |buffer| odb.write_raw(&buffer, ObjectType::Tree),
+        &mut |buffer| odb.write_raw(buffer, ObjectType::Tree),
         &[],
         0,
     )?;
@@ -122,6 +123,7 @@ impl<W: Write> TreeWriter<W> {
         Self { dest }
     }
 
+    #[allow(unused)]
     fn write_tree(&mut self, tree: &Tree) -> io::Result<()> {
         for entry in &tree.entries {
             self.write_entry(entry.mode, &entry.filename, &entry.id)?;
@@ -331,14 +333,16 @@ pub fn decay_to_tree(repo: &Repository, treeish: &str) -> Result<(Tree, ObjectId
     }
 
     let refs = repo.refs();
-    let branch = refs.lookup_branch(treeish).map_err(Error::LookupRefFailed)?;
+    let branch = refs
+        .lookup_branch(treeish)
+        .map_err(Error::LookupRefFailed)?;
     let commit_id = branch.target;
     let odb = repo.object_db();
     let commit = odb.read_commit(commit_id).map_err(Error::OdbReadFailed)?;
     let tree = odb
         .read_tree(commit.tree_id)
         .map_err(Error::OdbReadFailed)?;
-    return Ok((tree, commit.tree_id));
+    Ok((tree, commit.tree_id))
 }
 
 #[cfg(test)]

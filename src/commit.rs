@@ -73,6 +73,7 @@ impl<W: Write> CommitWriter<W> {
         Self { dest }
     }
 
+    #[allow(unused)]
     pub fn write_commit(&mut self, commit: &Commit) -> io::Result<()> {
         self.write_commit_ext(
             &commit.tree_id,
@@ -91,9 +92,9 @@ impl<W: Write> CommitWriter<W> {
         committer: &Signature,
         message: &str,
     ) -> io::Result<()> {
-        writeln!(self.dest, "tree {}", tree_id.to_string())?;
+        writeln!(self.dest, "tree {}", tree_id)?;
         for parent in parents {
-            writeln!(self.dest, "parent {}", parent.to_string())?;
+            writeln!(self.dest, "parent {}", parent)?;
         }
 
         writeln!(self.dest, "author {}", author)?;
@@ -162,7 +163,7 @@ mod tests {
         ];
         let author =
             Signature::build("author", "author@email", Time::new(1771253662, 10800)).unwrap();
-            let committer =
+        let committer =
             Signature::build("committer", "commiter@email", Time::new(1771253662, 10800)).unwrap();
         let message = "Commit message";
 
@@ -186,26 +187,36 @@ mod tests {
         );
 
         assert_eq!(commit.parents.len(), 2);
-        assert_eq!(commit.parents[0], ObjectId::from_str("15df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap());
-        assert_eq!(commit.parents[1], ObjectId::from_str("25df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap());
-        assert_eq!(commit.author,
-              Signature {
-            name: String::from("author"),
-            email: String::from("author@email"),
-            time: Time {
-                unix_time: 1771253662,
-                offset: 10800
-            },
-        });
-        assert_eq!(commit.committer,
-              Signature {
-            name: String::from("committer"),
-            email: String::from("commiter@email"),
-            time: Time {
-                unix_time: 1771253662,
-                offset: 10800
-            },
-        });
+        assert_eq!(
+            commit.parents[0],
+            ObjectId::from_str("15df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap()
+        );
+        assert_eq!(
+            commit.parents[1],
+            ObjectId::from_str("25df50785d62d3b05ab03d9cbf7e4a0b49449730").unwrap()
+        );
+        assert_eq!(
+            commit.author,
+            Signature {
+                name: String::from("author"),
+                email: String::from("author@email"),
+                time: Time {
+                    unix_time: 1771253662,
+                    offset: 10800
+                },
+            }
+        );
+        assert_eq!(
+            commit.committer,
+            Signature {
+                name: String::from("committer"),
+                email: String::from("commiter@email"),
+                time: Time {
+                    unix_time: 1771253662,
+                    offset: 10800
+                },
+            }
+        );
         assert_eq!(commit.message, "message");
         Ok(())
     }

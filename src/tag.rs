@@ -63,7 +63,7 @@ pub fn lookup_tag_by_id(repo: &Repository, id: ObjectId) -> Result<Tag, Error> {
 pub fn lookup_tag_by_name(repo: &Repository, name: &str) -> Result<Tag, Error> {
     let tag_id = repo
         .refs()
-        .lookup_tag_ref(&name)
+        .lookup_tag_ref(name)
         .map_err(Error::LookupTagRefFailed)?
         .target;
 
@@ -97,7 +97,7 @@ impl<W: Write> TagWriter<W> {
         tagger: &Signature,
         message: &str,
     ) -> io::Result<()> {
-        writeln!(self.dest, "object {}", object_id.to_string())?;
+        writeln!(self.dest, "object {}", object_id)?;
         writeln!(self.dest, "type {}", object_type)?;
         writeln!(self.dest, "tag {}", tag_name)?;
         writeln!(self.dest, "tagger {}", tagger)?;

@@ -92,6 +92,7 @@ pub enum Error {
 }
 
 impl Index {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Index {
         Self {
             version: 0,

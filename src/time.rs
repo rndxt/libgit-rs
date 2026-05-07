@@ -70,6 +70,7 @@ mod tests {
     use crate::testing;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn print_current_time() -> testing::Result<()> {
         let time = Time::current_time();
         println!("{:?}", time);

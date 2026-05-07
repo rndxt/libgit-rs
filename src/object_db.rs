@@ -276,7 +276,7 @@ fn parse_object_type_and_content(data: &[u8]) -> Result<(ObjectType, Vec<u8>), E
         .ok_or(Error::CorruptedObject)?;
     let (size, rest) = rest.split_at(idx);
     let size = str::from_utf8(size).map_err(|_| Error::CorruptedObject)?;
-    let size = usize::from_str_radix(size, 10).map_err(|_| Error::CorruptedObject)?;
+    let size = size.parse::<usize>().map_err(|_| Error::CorruptedObject)?;
     if size != rest[1..].len() {
         return Err(Error::CorruptedObject);
     }

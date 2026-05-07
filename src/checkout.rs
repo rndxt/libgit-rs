@@ -64,9 +64,8 @@ fn update_index(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
     let mut index = repo.read_index().map_err(Error::CannotReadIndex)?;
 
     for delta in deltas.iter().filter(|d| d.status == Status::Deleted) {
-        match index.find_by_raw_path(&delta.old_file.as_ref().unwrap().0) {
-            Ok(i) => index.remove(i),
-            Err(_) => {},
+        if let Ok(i) = index.find_by_raw_path(&delta.old_file.as_ref().unwrap().0) {
+            index.remove(i);
         }
     }
 
@@ -82,7 +81,7 @@ fn update_index(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
         add_path_to_index(path, repo, &mut index).unwrap();
     }
 
-    write_index(&repo, &index).unwrap();
+    write_index(repo, &index).unwrap();
     Ok(())
 }
 
@@ -94,7 +93,7 @@ fn apply_changes(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
                 let odb = repo.object_db();
                 let blob = odb.read_blob(*id).map_err(Error::OdbReadFailed)?;
 
-                let path = str::from_utf8(&path).unwrap(); // TODO
+                let path = str::from_utf8(path).unwrap(); // TODO
                 let path = PathBuf::from(path);
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(repo.root_path().join(parent)).unwrap();
@@ -106,11 +105,11 @@ fn apply_changes(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
             },
             Status::Modified => {
                 let (path, id) = delta.new_file.as_ref().unwrap();
-                println!("modify: {} {}", str::from_utf8(&path).unwrap(), id);
+                println!("modify: {} {}", str::from_utf8(path).unwrap(), id);
                 let odb = repo.object_db();
                 let blob = odb.read_blob(*id).map_err(Error::OdbReadFailed)?;
 
-                let path = str::from_utf8(&path).unwrap(); // TODO
+                let path = str::from_utf8(path).unwrap(); // TODO
                 let path = PathBuf::from(path);
                 let mut file = OpenOptions::new()
                     .read(true)
@@ -122,8 +121,8 @@ fn apply_changes(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
             },
             Status::Deleted => {
                 let (path, _) = delta.old_file.as_ref().unwrap();
-                println!("remove: {}", str::from_utf8(&path).unwrap());
-                let path = str::from_utf8(&path).unwrap(); // TODO
+                println!("remove: {}", str::from_utf8(path).unwrap());
+                let path = str::from_utf8(path).unwrap(); // TODO
                 let path = PathBuf::from(path);
                 fs::remove_file(path).unwrap();
             },

@@ -1,7 +1,7 @@
 pub mod blob;
 pub mod checkout;
-pub mod diff;
 pub mod commit;
+pub mod diff;
 pub mod index;
 pub mod object_db;
 pub mod object_id;

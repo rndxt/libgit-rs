@@ -44,9 +44,9 @@ impl Sha1 {
                 let byte = u8::from_str_radix(str, 16).map_err(|_| Error::InvalidData)?;
                 bytes.push(byte);
             }
-            return Self::from_bytes(&bytes);
+            Self::from_bytes(&bytes)
         } else {
-            return Err(Error::WrongBufferSize(hex.len()));
+            Err(Error::WrongBufferSize(hex.len()))
         }
     }
 

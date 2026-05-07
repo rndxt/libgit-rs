@@ -207,8 +207,12 @@ fn update_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
 
 fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<()> {
     let repo = Repository::open(repo)?;
-    let commit_id = ObjectId::from_str(&commit_id)?;
     let refs = repo.refs();
+    let commit_id = if commit_id == "master" {
+        refs.lookup_branch("master")?.target
+    } else {
+        ObjectId::from_str(&commit_id)?
+    };
     refs.create_branch(&branch_name, commit_id)?;
     Ok(())
 }
@@ -376,5 +380,5 @@ fn main() -> ExitCode {
         eprintln!("Error: {e}");
         return ExitCode::FAILURE;
     }
-    return ExitCode::SUCCESS;
+    ExitCode::SUCCESS
 }

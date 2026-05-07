@@ -65,7 +65,7 @@ impl Refs {
     }
 
     pub fn create_tag_ref(&self, tag_name: &str, target_id: ObjectId) -> Result<Reference, Error> {
-        self.create_ref(&tag_name, target_id, &&self.tags_dir())
+        self.create_ref(tag_name, target_id, &self.tags_dir())
     }
 
     pub fn create_branch(
@@ -73,7 +73,7 @@ impl Refs {
         branch_name: &str,
         target_commit: ObjectId,
     ) -> Result<Reference, Error> {
-        self.create_ref(&branch_name, target_commit, &self.branch_dir())
+        self.create_ref(branch_name, target_commit, &self.branch_dir())
     }
 
     pub fn update_branch(&self, branch_name: String, target_commit: ObjectId) -> Result<(), Error> {
@@ -113,9 +113,9 @@ impl Refs {
             let branch = self.lookup_branch(&branch_name)?;
             Ok(HeadState::Normal(branch))
         } else if let Ok(id) = ObjectId::from_ascii_hex(&buffer) {
-            return Ok(HeadState::Detached(id));
+            Ok(HeadState::Detached(id))
         } else {
-            return Err(Error::InvalidSymbolicRef);
+            Err(Error::InvalidSymbolicRef)
         }
     }
 
@@ -142,7 +142,7 @@ impl Refs {
         }
 
         fs::create_dir_all(path).map_err(Error::CreateDirFailed)?;
-        let mut file = File::create_new(path.join(&name)).map_err(Error::CreateFileFailed)?;
+        let mut file = File::create_new(path.join(name)).map_err(Error::CreateFileFailed)?;
         io::copy(&mut target_id.to_string().as_bytes(), &mut file)
             .map_err(Error::CannotWriteToFile)?;
 
