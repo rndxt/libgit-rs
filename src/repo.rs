@@ -67,7 +67,7 @@ impl Repository {
 
     pub fn read_index(&self) -> Result<Index, index::Error> {
         let path = self.git_dir().join("index");
-        Index::open(path)
+        Index::from_file(path)
     }
 
     pub fn object_db(&self) -> ObjectDB {

@@ -100,7 +100,7 @@ impl Index {
         }
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Index, Error> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Index, Error> {
         // On files > 32 KB, Git uses mmap(2) call.
         // libgit2 always write all to memory.
         // For convenience, do same.

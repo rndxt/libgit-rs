@@ -8,8 +8,9 @@ use clap::{Parser, Subcommand};
 
 use git_rs::checkout::checkout_tree;
 use git_rs::commit::create_commit_from_index;
+use git_rs::diff::{Status, TreeDiff};
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
-use git_rs::myers::{Action, Myers};
+use git_rs::myers::{Action, Edit, Myers};
 use git_rs::object_db::{Object, hash_file};
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
@@ -18,7 +19,7 @@ use git_rs::repo::{Repository, RepositoryInitOptions};
 use git_rs::signature::{AuthorInfo, CommitterInfo, Signature};
 use git_rs::tag::{Tag, create_annotated_tag, lookup_tag_by_id, lookup_tag_by_name};
 use git_rs::time::Time;
-use git_rs::tree::{TreeWalker, create_trees_from_index};
+use git_rs::tree::{Tree, TreeWalker, create_trees_from_index, decay_to_tree};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -97,9 +98,14 @@ enum Command {
         id: String,
     },
 
-    Diff {
-        left: String,
-        right: String,
+    DiffFiles {
+        a: PathBuf,
+        b: PathBuf,
+    },
+
+    DiffTrees {
+        a: String,
+        b: String,
     },
 }
 
@@ -312,37 +318,90 @@ fn checkout(repo: &Path, id: String) -> Result<()> {
     Ok(())
 }
 
-fn diff(left: String, right: String) -> Result<()> {
-    let mut left = File::open(left)?;
-    let mut a = Vec::new();
-    left.read_to_end(&mut a)?;
+fn print_edit(edit: &Edit) {
+    match edit.action {
+        Action::Nothing => {
+            let a = edit.a.as_ref().unwrap();
+            let str = std::str::from_utf8(&a.1).unwrap();
+            println!("  {}", str);
+        },
+        Action::Add => {
+            let b = edit.b.as_ref().unwrap();
+            let str = std::str::from_utf8(&b.1).unwrap();
+            println!("+ {}", str);
+        },
+        Action::Delete => {
+            let a = edit.a.as_ref().unwrap();
+            let str = std::str::from_utf8(&a.1).unwrap();
+            println!("- {}", str);
+        },
+    }
+}
 
-    let mut right = File::open(right)?;
-    let mut b = Vec::new();
-    right.read_to_end(&mut b)?;
+fn print_diff(a: &[u8], b: &[u8]) {
+    Myers::new(a, b)
+        .diff()
+        .iter()
+        .for_each(print_edit);
+}
 
-    let edits = Myers::new(&a, &b).diff();
-    for edit in edits {
-        match edit.action {
-            Action::Nothing => {
-                let a = edit.a.as_ref().unwrap();
-                let b = edit.b.as_ref().unwrap();
-                let str = std::str::from_utf8(&a.1).unwrap();
-                println!("  {} {} {}", a.0, b.0, str);
+fn read_to_vec(path: &Path) -> Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    Ok(buffer)
+}
+
+fn diff_files(path_a: PathBuf, path_b: PathBuf) -> Result<()> {
+    let a = read_to_vec(&path_a)?;
+    let b = read_to_vec(&path_b)?;
+    println!("--- {}", path_a.display());
+    println!("+++ {}", path_b.display());
+    print_diff(&a, &b);
+    Ok(())
+}
+
+fn decay_and_print(repo: &Repository, treeish: &str) -> Result<Tree> {
+    let (tree_a, id_a) = decay_to_tree(repo, treeish)?;
+    if id_a.to_string() != treeish {
+        println!("INFO: {} decayed to tree {}", treeish, id_a);
+    }
+    Ok(tree_a)
+}
+
+fn diff(repo: &Path, treeish_a: &str, treeish_b: &str) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let tree_a = decay_and_print(&repo, treeish_a)?;
+    let tree_b = decay_and_print(&repo, treeish_b)?;
+
+    let deltas = TreeDiff::new(&repo).compare_trees(tree_a, tree_b)?;
+    for delta in deltas {
+        match delta.status {
+            Status::Added => {
+                let (path, _) = delta.new_file.as_ref().unwrap();
+                println!("new file: {}", str::from_utf8(path).unwrap());
             },
-            Action::Add => {
-                let b = edit.b.as_ref().unwrap();
-                let str = std::str::from_utf8(&b.1).unwrap();
-                println!("+   {} {}", b.0, str);
+            Status::Deleted => {
+                let (path, _) = delta.old_file.as_ref().unwrap();
+                println!("removed file: {}", str::from_utf8(path).unwrap());
             },
-            Action::Delete => {
-                let a = edit.a.as_ref().unwrap();
-                let str = std::str::from_utf8(&a.1).unwrap();
-                println!("- {}   {}", a.0, str);
+            Status::Modified => {
+                let odb = repo.object_db();
+
+                let (path_a, id_a) = delta.new_file.unwrap();
+                let a = odb.read_blob(id_a)?;
+
+                let (_, id_b) = delta.old_file.unwrap();
+                let b = odb.read_blob(id_b)?;
+
+                println!("modified file: {}", str::from_utf8(&path_a).unwrap());
+                println!("--- {}", treeish_a);
+                println!("+++ {}", treeish_b);
+                print_diff(&a.data, &b.data);
             },
+            _ => {},
         }
     }
-
     Ok(())
 }
 
@@ -371,7 +430,8 @@ fn run() -> Result<()> {
         Command::LookupTag { str } => lookup_tag(&current_dir, str),
         Command::PrintObject { id } => print_object(&current_dir, id),
         Command::Checkout { id } => checkout(&current_dir, id),
-        Command::Diff { left, right } => diff(left, right),
+        Command::DiffFiles { a, b } => diff_files(a, b),
+        Command::DiffTrees { a, b } => diff(&current_dir, &a, &b),
     }
 }
 

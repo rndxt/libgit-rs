@@ -49,9 +49,9 @@ impl Edit {
     pub fn line(&self) -> &Line {
         debug_assert!(self.a.is_some() && self.b.is_some());
         if let Some(a) = self.a.as_ref() {
-            &a
+            a
         } else if let Some(b) = self.b.as_ref() {
-            &b
+            b
         } else {
             unreachable!()
         }
@@ -124,7 +124,7 @@ impl Array {
     fn new(d: isize) -> Self {
         debug_assert!(d >= 0, "{d} > 0 is false");
         Array {
-            d: d as isize,
+            d,
             arr: vec![0; 2 * (d as usize) + 1],
         }
     }
@@ -304,7 +304,7 @@ fn try_forward_move(
             return Some(Region::new(px, py, x, y));
         }
     }
-    return None;
+    None
 }
 
 fn try_backward_move(
@@ -341,7 +341,7 @@ fn try_backward_move(
             return Some(Region::new(x, y, px, py));
         }
     }
-    return None;
+    None
 }
 
 #[cfg(test)]
