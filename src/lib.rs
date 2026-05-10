@@ -2,7 +2,10 @@ pub mod blob;
 pub mod checkout;
 pub mod commit;
 pub mod diff;
+pub mod diff3;
 pub mod index;
+pub mod merge_base;
+pub mod myers;
 pub mod object_db;
 pub mod object_id;
 pub mod object_type;
@@ -14,7 +17,6 @@ pub mod time;
 pub mod tree;
 
 mod binary;
-pub mod myers;
 mod sha1;
 
 #[derive(Debug, Clone, Copy)]

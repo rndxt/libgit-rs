@@ -14,7 +14,7 @@ pub enum Error {
     WrongBufferSize(usize),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Sha1(pub [u8; SHA1_SIZE_IN_BYTES]);
 
 impl Sha1 {

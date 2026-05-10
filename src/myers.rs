@@ -58,7 +58,7 @@ impl Edit {
     }
 }
 
-fn lines(text: &[u8]) -> Vec<Line> {
+pub fn lines(text: &[u8]) -> Vec<Line> {
     text.split(|byte| *byte == b'\n')
         .enumerate()
         .map(|(i, content)| Line(i + 1, content.to_vec()))
@@ -155,30 +155,28 @@ impl IndexMut<isize> for Array {
 }
 
 pub struct Myers<'a> {
-    a: &'a [u8],
-    b: &'a [u8],
+    a: &'a [Line],
+    b: &'a [Line],
 }
 
 impl<'a> Myers<'a> {
-    pub fn new(left: &'a [u8], right: &'a [u8]) -> Self {
+    pub fn from_lines(left: &'a [Line], right: &'a [Line]) -> Self {
         Myers { a: left, b: right }
     }
 
-    pub fn diff(&self) -> Vec<Edit> {
-        let a = lines(self.a);
-        let b = lines(self.b);
-        walk_snakes(&a, &b)
+    pub fn compare(&self) -> Vec<Edit> {
+        walk_snakes(self.a, self.b)
             .iter()
             .map(|region| {
                 if region.width() == 0 {
-                    let line = b[region.top_left.y as usize].clone();
+                    let line = self.b[region.top_left.y as usize].clone();
                     Edit::add(line)
                 } else if region.height() == 0 {
-                    let line = a[region.top_left.x as usize].clone();
+                    let line = self.a[region.top_left.x as usize].clone();
                     Edit::delete(line)
                 } else {
-                    let left = a[region.top_left.x as usize].clone();
-                    let right = b[region.top_left.y as usize].clone();
+                    let left = self.a[region.top_left.x as usize].clone();
+                    let right = self.b[region.top_left.y as usize].clone();
                     Edit::nothing(left, right)
                 }
             })
@@ -352,9 +350,13 @@ mod tests {
     #[test]
     fn example() -> testing::Result<()> {
         let a = b"A\nB\nC\nA\nB\nB\nA";
+        let a = lines(a);
+
         let b = b"C\nB\nA\nB\nA\nC";
-        let alg = Myers::new(a, b);
-        let actual = alg.diff();
+        let b = lines(b);
+
+        let alg = Myers::from_lines(&a, &b);
+        let actual = alg.compare();
 
         let expected = [
             Edit::delete(Line(1, b"A".to_vec())),

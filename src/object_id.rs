@@ -3,7 +3,7 @@ use std::fmt;
 pub use crate::sha1::Error;
 use crate::sha1::{SHA1_SIZE_IN_BYTES, Sha1};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ObjectId {
     hash: Sha1,
 }

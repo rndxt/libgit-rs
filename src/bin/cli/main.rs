@@ -7,10 +7,11 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use git_rs::checkout::checkout_tree;
-use git_rs::commit::create_commit_from_index;
+use git_rs::commit::{create_commit_from_index, decay_to_commit};
 use git_rs::diff::{Status, TreeDiff};
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
-use git_rs::myers::{Action, Edit, Myers};
+use git_rs::merge_base::find_merge_base;
+use git_rs::myers::{Action, Edit, Myers, lines};
 use git_rs::object_db::{Object, hash_file};
 use git_rs::object_id::ObjectId;
 use git_rs::object_type::ObjectType;
@@ -106,6 +107,11 @@ enum Command {
     DiffTrees {
         a: String,
         b: String,
+    },
+
+    MergeBase {
+        id_1: String,
+        id_2: String,
     },
 }
 
@@ -339,8 +345,10 @@ fn print_edit(edit: &Edit) {
 }
 
 fn print_diff(a: &[u8], b: &[u8]) {
-    Myers::new(a, b)
-        .diff()
+    let a = lines(a);
+    let b = lines(b);
+    Myers::from_lines(&a, &b)
+        .compare()
         .iter()
         .for_each(print_edit);
 }
@@ -405,6 +413,20 @@ fn diff(repo: &Path, treeish_a: &str, treeish_b: &str) -> Result<()> {
     Ok(())
 }
 
+fn merge_base(repo: &Path, id_1: String, id_2: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let bases = find_merge_base(
+        &repo,
+        decay_to_commit(&repo, &id_1)?.1,
+        decay_to_commit(&repo, &id_2)?.1,
+    )?;
+
+    for (_, id) in bases {
+        println!("{}", id);
+    }
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let current_dir = env::current_dir()?;
     let args = Args::parse();
@@ -432,6 +454,7 @@ fn run() -> Result<()> {
         Command::Checkout { id } => checkout(&current_dir, id),
         Command::DiffFiles { a, b } => diff_files(a, b),
         Command::DiffTrees { a, b } => diff(&current_dir, &a, &b),
+        Command::MergeBase { id_1, id_2 } => merge_base(&current_dir, id_1, id_2),
     }
 }
 

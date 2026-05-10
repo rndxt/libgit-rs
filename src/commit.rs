@@ -3,13 +3,16 @@ use std::io::{self, Write};
 use crate::binary::BinaryReader;
 use crate::index;
 use crate::object_db;
+use crate::object_db::Object;
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
+use crate::refs;
+use crate::refs::HeadState;
 use crate::repo::Repository;
 use crate::signature::{AuthorInfo, CommitterInfo, Signature};
 use crate::tree::create_trees_from_index;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     pub tree_id: ObjectId,
     pub parents: Vec<ObjectId>,
@@ -43,6 +46,15 @@ pub enum Error {
 
     #[error("cannot store object to odb: {0}")]
     OdbWriteFailed(#[from] object_db::Error),
+
+    #[error("cannot read tree: {0}")]
+    OdbReadFailed(object_db::Error),
+
+    #[error("lookup ref failed: {0}")]
+    LookupRefFailed(refs::Error),
+
+    #[error("specified commitish is not commit, tag, branch or HEAD")]
+    InvalidCommitish,
 }
 
 pub fn create_commit_from_index(
@@ -145,6 +157,49 @@ pub fn read_commit_from_buffer(buffer: &[u8]) -> Option<Commit> {
         message,
     };
     Some(commit)
+}
+
+pub fn decay_to_commit(repo: &Repository, commitish: &str) -> Result<(Commit, ObjectId), Error> {
+    if commitish == "HEAD" {
+        let refs = repo.refs();
+        let head = refs.resolve_head().map_err(Error::LookupRefFailed)?;
+        let commit_id = match head {
+            HeadState::Detached(id) => id,
+            HeadState::Normal(branch) => branch.target,
+        };
+
+        let odb = repo.object_db();
+        let commit = odb.read_commit(commit_id).map_err(Error::OdbReadFailed)?;
+        return Ok((commit, commit_id));
+    }
+
+    if let Ok(id) = ObjectId::from_str(commitish) {
+        let odb = repo.object_db();
+        let object = odb.read_object(id).map_err(Error::OdbReadFailed)?;
+        match object {
+            Object::Commit(commit) => {
+                return Ok((commit, id));
+            },
+            Object::Tag(tag) => {
+                let commit = odb
+                    .read_commit(tag.object_id)
+                    .map_err(Error::OdbReadFailed)?;
+                return Ok((commit, id));
+            },
+            _ => {
+                return Err(Error::InvalidCommitish);
+            },
+        }
+    }
+
+    let refs = repo.refs();
+    let branch = refs
+        .lookup_branch(commitish)
+        .map_err(Error::LookupRefFailed)?;
+    let commit_id = branch.target;
+    let odb = repo.object_db();
+    let commit = odb.read_commit(commit_id).map_err(Error::OdbReadFailed)?;
+    Ok((commit, commit_id))
 }
 
 #[cfg(test)]
