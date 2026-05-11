@@ -45,9 +45,9 @@ pub enum Error {
     CannotReadIndex(#[from] index::Error),
 
     #[error("cannot store object to odb: {0}")]
-    OdbWriteFailed(#[from] object_db::Error),
+    OdbWriteFailed(object_db::Error),
 
-    #[error("cannot read tree: {0}")]
+    #[error("cannot read object: {0}")]
     OdbReadFailed(object_db::Error),
 
     #[error("lookup ref failed: {0}")]
@@ -66,14 +66,23 @@ pub fn create_commit_from_index(
 ) -> Result<ObjectId, Error> {
     let index = repo.read_index()?;
     let odb = repo.object_db();
-    let tree_id = create_trees_from_index(&odb, &index)?;
+    let tree_id = create_trees_from_index(&odb, &index).map_err(Error::OdbWriteFailed)?;
     let mut buffer = Vec::new();
     let mut writer = CommitWriter::new(&mut buffer);
     writer
         .write_commit_ext(&tree_id, parents, &author.0, &committer.0, message)
         .unwrap();
-    let commit_id = odb.write_raw(&buffer, ObjectType::Commit)?;
+    let commit_id = odb
+        .write_raw(&buffer, ObjectType::Commit)
+        .map_err(Error::OdbWriteFailed)?;
     Ok(commit_id)
+}
+
+pub fn write_commit_to_buffer(commit: &Commit) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let mut writer = CommitWriter::new(&mut buffer);
+    writer.write_commit(commit).unwrap();
+    buffer
 }
 
 struct CommitWriter<W: Write> {
@@ -85,7 +94,6 @@ impl<W: Write> CommitWriter<W> {
         Self { dest }
     }
 
-    #[allow(unused)]
     pub fn write_commit(&mut self, commit: &Commit) -> io::Result<()> {
         self.write_commit_ext(
             &commit.tree_id,

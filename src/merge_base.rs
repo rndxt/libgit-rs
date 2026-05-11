@@ -2,9 +2,8 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
 use crate::commit::Commit;
-use crate::object_db;
+use crate::object_db::{self, IOdb};
 use crate::object_id::ObjectId;
-use crate::repo::Repository;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,40 +58,43 @@ impl Ord for Elem {
     }
 }
 
-pub fn find_merge_base(
-    repo: &Repository,
-    id1: ObjectId,
-    id2: ObjectId,
+pub fn find_merge_bases(
+    odb: &impl IOdb,
+    first_id: ObjectId,
+    rest: &[ObjectId],
 ) -> Result<Vec<(Commit, ObjectId)>, Error> {
-    let odb = repo.object_db();
-    find_merge_base_impl(
-        &mut |id| odb.read_commit(id).map_err(Error::OdbReadFailed),
-        id1,
-        id2,
-    )
+    if rest.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut lookup_commit = |id| odb.read_commit(id).map_err(Error::OdbReadFailed);
+    if rest.iter().all(|id| *id == first_id) {
+        return Ok(vec![(lookup_commit(first_id)?, first_id)]);
+    }
+
+    find_best_common_ancestors(&mut lookup_commit, first_id, rest)
 }
 
-fn find_merge_base_impl<F, E>(
+fn find_best_common_ancestors<F, E>(
     lookup_commit: &mut F,
-    id1: ObjectId,
-    id2: ObjectId,
+    first_id: ObjectId,
+    rest: &[ObjectId],
 ) -> Result<Vec<(Commit, ObjectId)>, E>
 where
     F: FnMut(ObjectId) -> Result<Commit, E>,
 {
-    let commit1 = lookup_commit(id1)?;
-    let commit2 = lookup_commit(id2)?;
-
-    let mut bases = Vec::new();
     let mut map = HashMap::new();
     let mut queue = BinaryHeap::new();
 
-    queue.push(Elem::new(commit1, id1));
-    map.insert(id1, FIRST);
+    queue.push(Elem::new(lookup_commit(first_id)?, first_id));
+    map.insert(first_id, FIRST);
 
-    queue.push(Elem::new(commit2, id2));
-    *map.entry(id2).or_insert(0) |= SECOND;
+    for id in rest {
+        queue.push(Elem::new(lookup_commit(*id)?, *id));
+        *map.entry(*id).or_insert(0) |= SECOND;
+    }
 
+    let mut bases = Vec::new();
     while has_nonstale_elems(&queue, &map) {
         let Elem { commit, id } = queue.pop().unwrap();
         let mut flags = map[&id] & (FIRST | SECOND | STALE);
@@ -179,14 +181,14 @@ mod tests {
         ];
 
         let mut odb = HashMap::new();
-        odb.insert(id[0], commits[0].clone());
-        odb.insert(id[1], commits[1].clone());
-        odb.insert(id[2], commits[2].clone());
+        for (id, commit) in zip(&id, &commits) {
+            odb.insert(id, commit.clone());
+        }
 
-        let actual = find_merge_base_impl(
+        let actual = find_best_common_ancestors(
             &mut |id| -> Result<Commit, Infallible> { Ok(odb[&id].clone()) },
             id[1],
-            id[2],
+            &id[2..],
         )?;
         let expected = vec![(commits[0].clone(), id[0])];
         assert_eq!(actual, expected);
@@ -218,12 +220,47 @@ mod tests {
             odb.insert(id, commit.clone());
         }
 
-        let actual = find_merge_base_impl(
+        let actual = find_best_common_ancestors(
             &mut |id| -> Result<Commit, Infallible> { Ok(odb[&id].clone()) },
             id[3],
-            id[4],
+            &id[4..],
         )?;
         let expected = vec![(commits[1].clone(), id[1]), (commits[2].clone(), id[2])];
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn three_commits() -> testing::Result<()> {
+        let id = [
+            "a123456789012345678901234567890123456789",
+            "b123456789012345678901234567890123456789",
+            "c123456789012345678901234567890123456789",
+            "d123456789012345678901234567890123456789",
+            "e123456789012345678901234567890123456789",
+        ]
+        .map(ObjectId::from_str)
+        .map(Result::unwrap);
+
+        let commits = [
+            get_commit_with_parents(vec![]),
+            get_commit_with_parents(vec![id[0]]),
+            get_commit_with_parents(vec![id[1]]),
+            get_commit_with_parents(vec![id[1]]),
+            get_commit_with_parents(vec![id[0]]),
+        ];
+
+        let mut odb = HashMap::new();
+        for (id, commit) in zip(&id, &commits) {
+            odb.insert(id, commit.clone());
+        }
+
+        let actual = find_best_common_ancestors(
+            &mut |id| -> Result<Commit, Infallible> { Ok(odb[&id].clone()) },
+            id[2],
+            &id[3..],
+        )?;
+        let expected = vec![(commits[1].clone(), id[1])];
         assert_eq!(actual, expected);
         Ok(())
     }

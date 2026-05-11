@@ -127,6 +127,7 @@ fn apply_changes(repo: &Repository, deltas: &[Delta]) -> Result<(), Error> {
                 fs::remove_file(path).unwrap();
             },
             Status::Unmodified => {},
+            _ => unreachable!(),
         };
     }
     Ok(())

@@ -8,7 +8,7 @@ use crate::refs;
 use crate::repo::Repository;
 use crate::signature::Signature;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tag {
     pub object_id: ObjectId,
     pub object_type: ObjectType,
@@ -105,6 +105,13 @@ impl<W: Write> TagWriter<W> {
         writeln!(self.dest, "{}", message)?;
         Ok(())
     }
+}
+
+pub fn write_tag_to_buffer(tag: &Tag) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let mut writer = TagWriter::new(&mut buffer);
+    writer.write_tag(tag).unwrap();
+    buffer
 }
 
 pub fn read_tag_from_buffer(buffer: &[u8]) -> Option<Tag> {

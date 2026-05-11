@@ -10,7 +10,8 @@ use git_rs::checkout::checkout_tree;
 use git_rs::commit::{create_commit_from_index, decay_to_commit};
 use git_rs::diff::{Status, TreeDiff};
 use git_rs::index::{add_path_to_index, remove_path_from_index, write_index};
-use git_rs::merge_base::find_merge_base;
+use git_rs::merge::{IndexEntry, TreeEntry, merge_commits};
+use git_rs::merge_base::find_merge_bases;
 use git_rs::myers::{Action, Edit, Myers, lines};
 use git_rs::object_db::{Object, hash_file};
 use git_rs::object_id::ObjectId;
@@ -110,6 +111,11 @@ enum Command {
     },
 
     MergeBase {
+        id_1: String,
+        id_2: String,
+    },
+
+    Merge {
         id_1: String,
         id_2: String,
     },
@@ -232,7 +238,8 @@ fn create_branch(repo: &Path, branch_name: String, commit_id: String) -> Result<
 fn walk_tree(repo: &Path, id: String) -> Result<()> {
     let repo = Repository::open(repo)?;
     let id = ObjectId::from_str(&id)?;
-    let mut walker = TreeWalker::from_id(id, &repo)?;
+    let odb = repo.object_db();
+    let mut walker = TreeWalker::from_id(&odb, id)?;
     while let Some(entry) = walker.current() {
         let path = entry.make_fullpath();
         println!("{}", str::from_utf8(&path).unwrap());
@@ -415,15 +422,52 @@ fn diff(repo: &Path, treeish_a: &str, treeish_b: &str) -> Result<()> {
 
 fn merge_base(repo: &Path, id_1: String, id_2: String) -> Result<()> {
     let repo = Repository::open(repo)?;
-    let bases = find_merge_base(
-        &repo,
+    let odb = repo.object_db();
+    let bases = find_merge_bases(
+        &odb,
         decay_to_commit(&repo, &id_1)?.1,
-        decay_to_commit(&repo, &id_2)?.1,
+        &[decay_to_commit(&repo, &id_2)?.1],
     )?;
 
     for (_, id) in bases {
         println!("{}", id);
     }
+    Ok(())
+}
+
+fn print_tree_entry(e: &Option<TreeEntry>) {
+    match e {
+        Some(e) =>
+        println!(
+            "{:#o} {} {}",
+            u32::from(e.mode),
+            e.id,
+            String::from_utf8(e.filename.clone()).unwrap(),
+        ),
+        None => println!("None"),
+    }
+}
+
+fn merge(repo: &Path, id_1: String, id_2: String) -> Result<()> {
+    let repo = Repository::open(repo)?;
+    let result = merge_commits(
+        &repo,
+        decay_to_commit(&repo, &id_1)?,
+        decay_to_commit(&repo, &id_2)?,
+    )?;
+
+    for e in result.entries {
+        match e {
+            IndexEntry::Normal(e) => print_tree_entry(&Some(e)),
+            IndexEntry::Conflict { o, a, b } => {
+                println!("conflict:");
+                print_tree_entry(&o);
+                print_tree_entry(&a);
+                print_tree_entry(&b);
+            },
+        }
+    }
+
     Ok(())
 }
 
@@ -455,6 +499,7 @@ fn run() -> Result<()> {
         Command::DiffFiles { a, b } => diff_files(a, b),
         Command::DiffTrees { a, b } => diff(&current_dir, &a, &b),
         Command::MergeBase { id_1, id_2 } => merge_base(&current_dir, id_1, id_2),
+        Command::Merge { id_1, id_2 } => merge(&current_dir, id_1, id_2),
     }
 }
 

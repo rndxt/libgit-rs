@@ -12,12 +12,13 @@ pub enum Error {
     TreeWalkingFailed(tree::Error),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Status {
     Unmodified,
     Added,
     Deleted,
     Modified,
+    TypeChanged,
 }
 
 pub struct Delta {
@@ -51,10 +52,11 @@ impl<'a> TreeDiff<'a> {
             return Ok(());
         }
 
+        let odb = self.repo.object_db();
         let mut left_walker =
-            TreeWalker::from_tree(self.repo, left).map_err(Error::TreeWalkingFailed)?;
+            TreeWalker::from_tree(&odb, left).map_err(Error::TreeWalkingFailed)?;
         let mut right_walker =
-            TreeWalker::from_tree(self.repo, right).map_err(Error::TreeWalkingFailed)?;
+            TreeWalker::from_tree(&odb, right).map_err(Error::TreeWalkingFailed)?;
 
         while let Some(left_entry) = left_walker.current()
             && let Some(right_entry) = right_walker.current()

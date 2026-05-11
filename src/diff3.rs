@@ -156,36 +156,36 @@ fn equal_lines(a: &[Line], b: &[Line]) -> HashMap<usize, usize> {
         .collect()
 }
 
-fn print_lines(lines: &[Line]) {
-    for line in lines {
-        let str = std::str::from_utf8(&line.1).unwrap();
-        println!("{}", str);
-    }
-}
-
-fn print_chunks(chunks: &[Chunk]) {
-    for chunk in chunks {
-        match chunk {
-            Chunk::Normal(lines) => {
-                print_lines(lines);
-            },
-            Chunk::Conflict { o, a, b } => {
-                println!("<<<<<<< a");
-                print_lines(a);
-                println!("||||||| o");
-                print_lines(o);
-                println!("=======");
-                print_lines(b);
-                println!(">>>>>>> b");
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing;
+
+    fn print_lines(lines: &[Line]) {
+        for line in lines {
+            let str = std::str::from_utf8(&line.1).unwrap();
+            println!("{}", str);
+        }
+    }
+
+    fn print_chunks(chunks: &[Chunk]) {
+        for chunk in chunks {
+            match chunk {
+                Chunk::Normal(lines) => {
+                    print_lines(lines);
+                },
+                Chunk::Conflict { o, a, b } => {
+                    println!("<<<<<<< a");
+                    print_lines(a);
+                    println!("||||||| o");
+                    print_lines(o);
+                    println!("=======");
+                    print_lines(b);
+                    println!(">>>>>>> b");
+                },
+            }
+        }
+    }
 
     #[test]
     fn example() -> testing::Result<()> {
@@ -218,6 +218,7 @@ mod tests {
 
         let diff3 = Diff3::from_lines(&o[..], &a[..], &b[..]);
         let actual = diff3.compare();
+        print_chunks(&actual);
 
         let expected = [
             // from o

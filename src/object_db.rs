@@ -7,12 +7,12 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
 use crate::blob::Blob;
-use crate::commit::{Commit, read_commit_from_buffer};
+use crate::commit::{Commit, read_commit_from_buffer, write_commit_to_buffer};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 use crate::sha1::Sha1Hasher;
-use crate::tag::{Tag, read_tag_from_buffer};
-use crate::tree::{Tree, read_tree_from_buffer};
+use crate::tag::{Tag, read_tag_from_buffer, write_tag_to_buffer};
+use crate::tree::{Tree, read_tree_from_buffer, write_tree_to_buffer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -51,6 +51,9 @@ pub enum Error {
 
     #[error("invalid tag")]
     InvalidTag,
+
+    #[error("object not found")]
+    NotFound,
 
     #[error("specified object is {actual}, not {expected}")]
     TypeMismatch {
@@ -95,7 +98,7 @@ pub fn hash_file<P: AsRef<Path>>(path: P, object_type: ObjectType) -> io::Result
     Ok(id)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Object {
     Blob(Blob),
     Tree(Tree),
@@ -112,6 +115,58 @@ impl Object {
             Object::Tag(_) => ObjectType::Tag,
         }
     }
+
+    pub fn get_blob(self) -> Result<Blob, Error> {
+        match self {
+            Object::Blob(blob) => Ok(blob),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Blob,
+                actual: self.object_type(),
+            }),
+        }
+    }
+
+    pub fn get_tree(self) -> Result<Tree, Error> {
+        match self {
+            Object::Tree(tree) => Ok(tree),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Tree,
+                actual: self.object_type(),
+            }),
+        }
+    }
+
+    pub fn get_commit(self) -> Result<Commit, Error> {
+        match self {
+            Object::Commit(commit) => Ok(commit),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Commit,
+                actual: self.object_type(),
+            }),
+        }
+    }
+
+    pub fn get_tag(self) -> Result<Tag, Error> {
+        match self {
+            Object::Tag(tag) => Ok(tag),
+            _ => Err(Error::TypeMismatch {
+                expected: ObjectType::Tag,
+                actual: self.object_type(),
+            }),
+        }
+    }
+}
+
+pub trait IOdb {
+    fn read_blob(&self, id: ObjectId) -> Result<Blob, Error>;
+    fn read_tree(&self, id: ObjectId) -> Result<Tree, Error>;
+    fn read_commit(&self, id: ObjectId) -> Result<Commit, Error>;
+    fn read_tag(&self, id: ObjectId) -> Result<Tag, Error>;
+
+    fn write_blob(&mut self, blob: &Blob) -> Result<ObjectId, Error>;
+    fn write_tree(&mut self, tree: &Tree) -> Result<ObjectId, Error>;
+    fn write_commit(&mut self, commit: &Commit) -> Result<ObjectId, Error>;
+    fn write_tag(&mut self, tag: &Tag) -> Result<ObjectId, Error>;
 }
 
 pub struct ObjectDB {
@@ -127,6 +182,25 @@ impl ObjectDB {
 
     pub fn objects_dir(&self) -> &Path {
         &self.objects_dir
+    }
+
+    pub fn write_blob(&self, blob: &Blob) -> Result<ObjectId, Error> {
+        self.write_raw(&blob.data, ObjectType::Blob)
+    }
+
+    fn write_tree(&self, tree: &Tree) -> Result<ObjectId, Error> {
+        let buffer = write_tree_to_buffer(tree);
+        self.write_raw(&buffer, ObjectType::Tree)
+    }
+
+    fn write_commit(&self, commit: &Commit) -> Result<ObjectId, Error> {
+        let buffer = write_commit_to_buffer(commit);
+        self.write_raw(&buffer, ObjectType::Commit)
+    }
+
+    fn write_tag(&self, tag: &Tag) -> Result<ObjectId, Error> {
+        let buffer = write_tag_to_buffer(tag);
+        self.write_raw(&buffer, ObjectType::Tag)
     }
 
     pub fn write_raw(&self, buffer: &[u8], object_type: ObjectType) -> Result<ObjectId, Error> {
@@ -172,47 +246,19 @@ impl ObjectDB {
     }
 
     pub fn read_blob(&self, id: ObjectId) -> Result<Blob, Error> {
-        let object = self.read_object(id)?;
-        match object {
-            Object::Blob(blob) => Ok(blob),
-            _ => Err(Error::TypeMismatch {
-                expected: ObjectType::Blob,
-                actual: object.object_type(),
-            }),
-        }
+        self.read_object(id)?.get_blob()
     }
 
     pub fn read_tree(&self, id: ObjectId) -> Result<Tree, Error> {
-        let object = self.read_object(id)?;
-        match object {
-            Object::Tree(tree) => Ok(tree),
-            _ => Err(Error::TypeMismatch {
-                expected: ObjectType::Tree,
-                actual: object.object_type(),
-            }),
-        }
+        self.read_object(id)?.get_tree()
     }
 
     pub fn read_commit(&self, id: ObjectId) -> Result<Commit, Error> {
-        let object = self.read_object(id)?;
-        match object {
-            Object::Commit(commit) => Ok(commit),
-            _ => Err(Error::TypeMismatch {
-                expected: ObjectType::Commit,
-                actual: object.object_type(),
-            }),
-        }
+        self.read_object(id)?.get_commit()
     }
 
     pub fn read_tag(&self, id: ObjectId) -> Result<Tag, Error> {
-        let object = self.read_object(id)?;
-        match object {
-            Object::Tag(tag) => Ok(tag),
-            _ => Err(Error::TypeMismatch {
-                expected: ObjectType::Tag,
-                actual: object.object_type(),
-            }),
-        }
+        self.read_object(id)?.get_tag()
     }
 
     pub fn read_object(&self, id: ObjectId) -> Result<Object, Error> {
@@ -258,6 +304,40 @@ impl ObjectDB {
         }
 
         parse_object_type_and_content(&data)
+    }
+}
+
+impl IOdb for ObjectDB {
+    fn read_blob(&self, id: ObjectId) -> Result<Blob, Error> {
+        ObjectDB::read_blob(self, id)
+    }
+
+    fn read_tree(&self, id: ObjectId) -> Result<Tree, Error> {
+        ObjectDB::read_tree(&self, id)
+    }
+
+    fn read_commit(&self, id: ObjectId) -> Result<Commit, Error> {
+        ObjectDB::read_commit(&self, id)
+    }
+
+    fn read_tag(&self, id: ObjectId) -> Result<Tag, Error> {
+        ObjectDB::read_tag(&self, id)
+    }
+
+    fn write_blob(&mut self, blob: &Blob) -> Result<ObjectId, Error> {
+        ObjectDB::write_blob(self, blob)
+    }
+
+    fn write_tree(&mut self, tree: &Tree) -> Result<ObjectId, Error> {
+        ObjectDB::write_tree(&self, tree)
+    }
+
+    fn write_commit(&mut self, commit: &Commit) -> Result<ObjectId, Error> {
+        ObjectDB::write_commit(&self, commit)
+    }
+
+    fn write_tag(&mut self, tag: &Tag) -> Result<ObjectId, Error> {
+        ObjectDB::write_tag(&self, tag)
     }
 }
 

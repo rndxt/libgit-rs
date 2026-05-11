@@ -5,21 +5,21 @@ use std::path::PathBuf;
 use crate::FileMode;
 use crate::binary::BinaryReader;
 use crate::index::Index;
-use crate::object_db::{self, Object, ObjectDB};
+use crate::object_db::{self, IOdb, Object, ObjectDB};
 use crate::object_id::ObjectId;
 use crate::object_type::ObjectType;
 use crate::refs::{self, HeadState};
 use crate::repo::Repository;
 use crate::sha1::SHA1_SIZE_IN_BYTES;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeEntry {
     pub mode: u32,
     pub filename: Vec<u8>,
     pub id: ObjectId,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Tree {
     pub entries: Vec<TreeEntry>,
 }
@@ -123,7 +123,6 @@ impl<W: Write> TreeWriter<W> {
         Self { dest }
     }
 
-    #[allow(unused)]
     fn write_tree(&mut self, tree: &Tree) -> io::Result<()> {
         for entry in &tree.entries {
             self.write_entry(entry.mode, &entry.filename, &entry.id)?;
@@ -139,6 +138,13 @@ impl<W: Write> TreeWriter<W> {
         self.dest.write_all(id.as_bytes())?;
         Ok(())
     }
+}
+
+pub fn write_tree_to_buffer(tree: &Tree) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let mut writer = TreeWriter::new(&mut buffer);
+    writer.write_tree(tree).unwrap();
+    buffer
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -161,8 +167,11 @@ struct StackNode {
     idx: usize,
 }
 
-pub struct TreeWalker<'a> {
-    repo: &'a Repository,
+pub struct TreeWalker<'a, T>
+where
+    T: IOdb,
+{
+    odb: &'a T,
     path: PathBuf,
     stack: LinkedList<StackNode>,
 }
@@ -197,9 +206,16 @@ impl<'a> WalkEntry<'a> {
     pub fn object_id(&self) -> ObjectId {
         self.tree_entry.id
     }
+
+    pub fn mode(&self) -> u32 {
+        self.tree_entry.mode
+    }
 }
 
-impl<'a> TreeWalker<'a> {
+impl<'a, T> TreeWalker<'a, T>
+where
+    T: IOdb,
+{
     fn advance_to_next_non_tree(&mut self) -> Result<(), Error> {
         loop {
             let top = self.stack.back().unwrap();
@@ -209,11 +225,7 @@ impl<'a> TreeWalker<'a> {
             }
 
             // TODO: check cycles: A -> B, B -> A
-            let tree = self
-                .repo
-                .object_db()
-                .read_tree(entry.id)
-                .map_err(Error::OdbReadFailed)?;
+            let tree = self.odb.read_tree(entry.id).map_err(Error::OdbReadFailed)?;
 
             if tree.entries.is_empty() {
                 return Err(Error::EmptyDirs);
@@ -228,18 +240,18 @@ impl<'a> TreeWalker<'a> {
     }
 }
 
-impl<'a> TreeWalker<'a> {
-    pub fn from_id(id: ObjectId, repo: &'a Repository) -> Result<Self, Error> {
-        let tree = repo
-            .object_db()
-            .read_tree(id)
-            .map_err(Error::OdbReadFailed)?;
-        Self::from_tree(repo, tree)
+impl<'a, T> TreeWalker<'a, T>
+where
+    T: IOdb,
+{
+    pub fn from_id(odb: &'a T, id: ObjectId) -> Result<Self, Error> {
+        let tree = odb.read_tree(id).map_err(Error::OdbReadFailed)?;
+        Self::from_tree(odb, tree)
     }
 
-    pub fn from_tree(repo: &'a Repository, tree: Tree) -> Result<Self, Error> {
+    pub fn from_tree(odb: &'a T, tree: Tree) -> Result<Self, Error> {
         let mut walker = Self {
-            repo,
+            odb,
             path: PathBuf::new(),
             stack: LinkedList::new(),
         };
